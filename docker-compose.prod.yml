@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  app:
+    image: yourdockerhubusername/myapp:latest
+    container_name: myapp-prod
+    ports:
+      - "80:8080"
+    environment:
+      - ENV=production
+    restart: always
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus

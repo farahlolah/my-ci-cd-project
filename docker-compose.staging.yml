@@ -1,0 +1,25 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    image: yourdockerhubusername/myapp:staging
+    ports:
+      - "8081:8080"
+    environment:
+      - ENV=staging
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
