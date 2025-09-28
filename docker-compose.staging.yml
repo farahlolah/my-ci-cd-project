@@ -7,6 +7,8 @@ services:
       - "8081:8080"
     environment:
       - ENV=staging
+    restart: always
+
 
   prometheus:
     image: prom/prometheus
@@ -16,6 +18,8 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
       - app
+    restart: always
+
 
   grafana:
     image: grafana/grafana:latest
@@ -23,3 +27,5 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+    restart: always
+
