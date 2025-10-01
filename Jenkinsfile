@@ -1,18 +1,31 @@
 pipeline {
     agent {
-        docker { image 'python:3.10' } // Run the pipeline inside a Python container
+        docker {
+            image 'python:3.10'
+            args '-u root' // ensures permissions for installs and volume mounts
+        }
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials' // Create this in Jenkins (Manage Jenkins → Credentials)
+        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials' // create this in Jenkins Credentials
         DOCKER_IMAGE = "farah16629/myapp"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Pull the latest version of your code from GitHub
+                echo "Checking out code from GitHub..."
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
+            }
+        }
+
+        stage('Verify Python Environment') {
+            steps {
+                echo "Verifying Python installation inside Docker agent..."
+                sh '''
+                    which python || echo "Python not found!"
+                    python --version || echo "Python command failed!"
+                '''
             }
         }
 
@@ -29,7 +42,7 @@ pipeline {
 
         stage('Static Analysis') {
             steps {
-                echo "Skipping static analysis by default"
+                echo "Skipping static analysis for now..."
             }
         }
 
