@@ -1,5 +1,12 @@
+import sys
+import os
 import pytest
-from src.app import app
+
+# Dynamically add the src folder to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
+
+from app import app  
+
 
 @pytest.fixture
 def client():
