@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.10'   // consistent with your Dockerfile
-            args '-u root'        // ensures permission to write files
-        }
-    }
+    agent any
 
     environment {
         DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
@@ -21,12 +16,17 @@ pipeline {
 
         stage('Install & Unit Tests') {
             steps {
-                echo "Installing dependencies and running unit tests..."
+                echo "Running unit tests inside Python container..."
                 sh '''
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                    docker run --rm \
+                        -v "$PWD":/app \
+                        -w /app \
+                        python:3.10 /bin/bash -c "
+                            python3 -m pip install --upgrade pip setuptools wheel &&
+                            pip install -r requirements.txt &&
+                            mkdir -p reports &&
+                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                        "
                 '''
             }
         }
@@ -63,7 +63,16 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 echo "Running integration tests..."
-                sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
+                sh '''
+                    docker run --rm \
+                        -v "$PWD":/app \
+                        -w /app \
+                        python:3.10 /bin/bash -c "
+                            pip install -r requirements.txt &&
+                            mkdir -p reports &&
+                            PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                        "
+                '''
             }
         }
 
@@ -83,7 +92,7 @@ pipeline {
         failure {
             mail to: 'farahwael158@gmail.com',
                  subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Build failed. View details here: ${env.BUILD_URL}"
+                 body: "Build failed. Check Jenkins for details: ${env.BUILD_URL}"
         }
     }
 }
