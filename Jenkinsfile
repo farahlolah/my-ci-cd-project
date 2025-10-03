@@ -1,8 +1,8 @@
 pipeline {
     agent {
         docker {
-            image 'python:3.10'
-            args '-u root'
+            image 'python:3.10'   // consistent with your Dockerfile
+            args '-u root'        // ensures permission to write files
         }
     }
 
@@ -14,24 +14,33 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                echo "Pulling latest code from GitHub..."
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
             }
         }
 
         stage('Install & Unit Tests') {
             steps {
-                echo "Installing dependencies and running unit tests inside Python container..."
+                echo "Installing dependencies and running unit tests..."
                 sh '''
-                    python -m pip install --upgrade pip
+                    python3 -m pip install --upgrade pip setuptools wheel
                     pip install -r requirements.txt
+                    mkdir -p reports
                     PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                 '''
+            }
+        }
+
+        stage('Static Analysis') {
+            steps {
+                echo "Skipping static analysis (placeholder stage)..."
             }
         }
 
         stage('Docker Build & Push') {
             steps {
                 script {
+                    echo "Building and pushing Docker image to DockerHub..."
                     docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
                         def img = docker.build("${env.DOCKER_IMAGE}:${env.BUILD_NUMBER}")
                         img.push()
@@ -43,18 +52,24 @@ pipeline {
 
         stage('Deploy to Staging') {
             steps {
-                sh 'docker-compose -f docker-compose.staging.yml up -d --build'
+                echo "Deploying to staging environment..."
+                sh '''
+                    docker-compose -f docker-compose.staging.yml up -d --build
+                    sleep 5
+                '''
             }
         }
 
         stage('Integration Tests') {
             steps {
+                echo "Running integration tests..."
                 sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
             }
         }
 
         stage('Deploy to Production') {
             steps {
+                echo "Deploying to production environment..."
                 sh 'docker-compose -f docker-compose.prod.yml up -d'
             }
         }
@@ -62,12 +77,13 @@ pipeline {
 
     post {
         always {
+            echo "Archiving test reports..."
             junit 'reports/**/*.xml'
         }
         failure {
             mail to: 'farahwael158@gmail.com',
                  subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Jenkins build ${env.BUILD_URL}"
+                 body: "Build failed. View details here: ${env.BUILD_URL}"
         }
     }
 }
