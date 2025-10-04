@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
-        DOCKER_IMAGE = "farah16629/myapp"
+        DOCKER_IMAGE = "farah16629/my-jenkins-docker"
     }
 
     stages {
@@ -26,13 +26,23 @@ pipeline {
                 sh '''
                     echo "=== Running inside Python container ==="
                     docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
-                        echo '=== Checking directory contents ===' &&
+                        echo '=== Checking directory contents ==='
                         ls -R &&
                         python3 -m pip install --upgrade pip setuptools wheel &&
                         pip install -r requirements.txt &&
                         mkdir -p /app/my-ci-cd-pipeline/reports &&
                         PYTHONPATH=. pytest tests/unit -q --junitxml=/app/my-ci-cd-pipeline/reports/unit.xml
                     "
+                    echo "=== Checking working directory ==="
+                    pwd
+                    echo "=== Listing files ==="
+                    ls -R
+                    echo "=== Upgrading pip and installing dependencies ==="
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r requirements.txt
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                 '''
             }
         }
@@ -47,21 +57,11 @@ pipeline {
             steps {
                 script {
                     echo "Building and pushing Docker image to DockerHub..."
-                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
-                        sh '''
-                            echo "=== Building Docker image ==="
-                            docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} -t ${DOCKER_IMAGE}:latest my-ci-cd-pipeline
-
-                            echo "=== Logging into DockerHub ==="
-                            echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
-
-                            echo "=== Pushing Docker image to DockerHub ==="
-                            docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
-                            docker push ${DOCKER_IMAGE}:latest
-
-                            echo "=== Logout from DockerHub ==="
-                            docker logout
-                        '''
+                    docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                        // Build the image from the Dockerfile in the repo root
+                        def img = docker.build("${env.DOCKER_IMAGE}:${env.BUILD_NUMBER}", ".")
+                        img.push()
+                        img.push('latest')
                     }
                 }
             }
@@ -71,7 +71,7 @@ pipeline {
             steps {
                 echo "Deploying to staging environment..."
                 sh '''
-                    docker-compose -f docker-compose.staging.yml up -d
+                    docker-compose -f docker-compose.staging.yml up -d --build
                     sleep 5
                 '''
             }
@@ -82,9 +82,10 @@ pipeline {
                 echo "Running integration tests..."
                 sh '''
                     docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
-                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/my-ci-cd-pipeline/reports/integration.xml
+                        PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                     "
                 '''
+                sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
             }
         }
 
@@ -101,6 +102,11 @@ pipeline {
             echo "Archiving test reports..."
             junit 'my-ci-cd-pipeline/reports/**/*.xml'
             junit 'reports/**/*.xml'
+        }
+        failure {
+            mail to: 'farahwael158@gmail.com',
+                 subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
+                 body: "Build failed. View details here: ${env.BUILD_URL}"
         }
     }
 }
