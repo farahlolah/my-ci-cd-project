@@ -14,7 +14,7 @@ pipeline {
             }
         }
 
-        // ✅ Clean and robust: uses Jenkins' docker agent for testing
+
         stage('Install & Unit Tests') {
             agent {
                 docker {
@@ -30,9 +30,13 @@ pipeline {
                     echo "=== Upgrading pip and installing dependencies ==="
                     python3 -m pip install --upgrade pip setuptools wheel
                     pip install -r requirements.txt
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+echo "=== Running unit tests ==="
+mkdir -p reports
+PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+
+echo "=== Listing reports directory ==="
+ls -l reports || true
+
                 '''
             }
         }
