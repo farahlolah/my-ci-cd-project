@@ -58,7 +58,6 @@ pipeline {
                 script {
                     echo "Building and pushing Docker image to DockerHub..."
                     docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
-                        // Build the image from the Dockerfile in the repo root
                         def img = docker.build("${env.DOCKER_IMAGE}:${env.BUILD_NUMBER}", ".")
                         img.push()
                         img.push('latest')
@@ -82,10 +81,14 @@ pipeline {
                 echo "Running integration tests..."
                 sh '''
                     docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
-                        PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                        mkdir -p /app/my-ci-cd-pipeline/reports &&
+                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/my-ci-cd-pipeline/reports/integration.xml
                     "
                 '''
-                sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
+                sh '''
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                '''
             }
         }
 
@@ -100,13 +103,26 @@ pipeline {
     post {
         always {
             echo "Archiving test reports..."
-            junit 'my-ci-cd-pipeline/reports/**/*.xml'
-            junit 'reports/**/*.xml'
+            sh '''
+                # Ensure reports folder exists even if tests fail
+                mkdir -p reports
+                mkdir -p my-ci-cd-pipeline/reports
+            '''
+            junit allowEmptyResults: true, testResults: 'my-ci-cd-pipeline/reports/**/*.xml'
+            junit allowEmptyResults: true, testResults: 'reports/**/*.xml'
         }
+
         failure {
-            mail to: 'farahwael158@gmail.com',
-                 subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Build failed. View details here: ${env.BUILD_URL}"
+            echo "Pipeline failed — attempting to send email notification..."
+            script {
+                try {
+                    mail to: 'farahwael158@gmail.com',
+                         subject: " Pipeline Failed: ${currentBuild.fullDisplayName}",
+                         body: "Build failed. View details here: ${env.BUILD_URL}"
+                } catch (err) {
+                    echo " Email sending failed (no SMTP configured) — continuing without interruption."
+                }
+            }
         }
     }
 }
