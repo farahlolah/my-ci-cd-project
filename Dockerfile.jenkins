@@ -2,12 +2,15 @@ FROM jenkins/jenkins:lts
 
 USER root
 
-# Install Docker CLI inside Jenkins container
+# Install Docker CLI & Docker Compose
 RUN apt-get update && \
-    apt-get install -y docker.io && \
+    apt-get install -y docker.io curl jq && \
+    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" \
+    -o /usr/local/bin/docker-compose && \
+    chmod +x /usr/local/bin/docker-compose && \
     apt-get clean
 
-# Allow Jenkins to use the Docker socket
+# Give Jenkins access to Docker
 RUN usermod -aG docker jenkins
 
 USER jenkins
