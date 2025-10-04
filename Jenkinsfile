@@ -10,7 +10,9 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo "Pulling latest code from GitHub..."
+                deleteDir()  // Clean old builds to avoid nested folders
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
+                sh 'ls -la'  // confirm files exist directly under workspace
             }
         }
 
@@ -21,14 +23,14 @@ pipeline {
                     echo "=== Running inside Python container ==="
                     docker run --rm \
                         -v $(pwd):/app \
-                        -w /app/my-ci-cd-pipeline \
+                        -w /app \
                         python:3.10 bash -c "
                             echo '=== Checking directory contents ==='
                             ls -R &&
                             python3 -m pip install --upgrade pip setuptools wheel &&
                             pip install -r requirements.txt &&
-                            mkdir -p /app/my-ci-cd-pipeline/reports &&
-                            PYTHONPATH=. pytest tests/unit -q --junitxml=/app/my-ci-cd-pipeline/reports/unit.xml
+                            mkdir -p reports &&
+                            PYTHONPATH=. pytest tests/unit -q --junitxml=/app/reports/unit.xml
                         "
                 '''
             }
@@ -57,7 +59,7 @@ pipeline {
             steps {
                 echo "Deploying to staging environment..."
                 sh '''
-                    docker-compose -f my-ci-cd-pipeline/docker-compose.staging.yml up -d --build
+                    docker-compose -f docker-compose.staging.yml up -d --build
                     sleep 5
                 '''
             }
@@ -69,10 +71,10 @@ pipeline {
                 sh '''
                     docker run --rm \
                         -v $(pwd):/app \
-                        -w /app/my-ci-cd-pipeline \
+                        -w /app \
                         python:3.10 bash -c "
                             echo '=== Running integration tests ==='
-                            PYTHONPATH=. pytest tests/integration -q --junitxml=/app/my-ci-cd-pipeline/reports/integration.xml
+                            PYTHONPATH=. pytest tests/integration -q --junitxml=/app/reports/integration.xml
                         "
                 '''
             }
@@ -81,7 +83,7 @@ pipeline {
         stage('Deploy to Production') {
             steps {
                 echo "Deploying to production environment..."
-                sh 'docker-compose -f my-ci-cd-pipeline/docker-compose.prod.yml up -d'
+                sh 'docker-compose -f docker-compose.prod.yml up -d'
             }
         }
     }
@@ -89,7 +91,7 @@ pipeline {
     post {
         always {
             echo "Archiving test reports..."
-            junit 'my-ci-cd-pipeline/reports/**/*.xml'
+            junit 'reports/**/*.xml'
         }
         failure {
             mail to: 'farahwael158@gmail.com',
