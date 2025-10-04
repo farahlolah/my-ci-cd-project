@@ -15,18 +15,27 @@ pipeline {
         }
 
         stage('Install & Unit Tests') {
+            agent {
+                docker {
+                    image 'python:3.10'
+                    args '-u root'
+                }
+            }
             steps {
-                echo "Running tests inside Python container..."
+                echo "Installing dependencies and running unit tests..."
                 sh '''
-                    echo "=== Running inside Python container ==="
-                    docker run --rm -v $(pwd)/my-ci-cd-pipeline:/app -w /app python:3.10 bash -c "
-                        echo '=== Checking directory contents ==='
-                        ls -R &&
-                        python3 -m pip install --upgrade pip setuptools wheel &&
-                        pip install -r requirements.txt &&
-                        mkdir -p reports &&
-                        PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                    "
+                    echo "=== Checking working directory ==="
+                    pwd
+                    echo "=== Listing files ==="
+                    ls -R
+
+                    echo "=== Upgrading pip and installing dependencies ==="
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r requirements.txt
+
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                 '''
             }
         }
@@ -61,13 +70,18 @@ pipeline {
         }
 
         stage('Integration Tests') {
+            agent {
+                docker {
+                    image 'python:3.10'
+                    args '-u root'
+                }
+            }
             steps {
                 echo "Running integration tests..."
                 sh '''
-                    docker run --rm -v $(pwd)/my-ci-cd-pipeline:/app -w /app python:3.10 bash -c "
-                        mkdir -p reports &&
-                        PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                    "
+                    echo "=== Running integration tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                 '''
             }
         }
@@ -83,7 +97,7 @@ pipeline {
     post {
         always {
             echo "Archiving test reports..."
-            junit 'my-ci-cd-pipeline/reports/**/*.xml'
+            junit 'reports/**/*.xml'
         }
         failure {
             mail to: 'farahwael158@gmail.com',
