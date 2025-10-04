@@ -7,34 +7,43 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 echo "Pulling latest code from GitHub..."
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
+                sh 'echo "Checkout listing:" && ls -la'
             }
         }
 
         stage('Install & Unit Tests') {
             steps {
-                echo "Installing dependencies and running unit tests inside Python container..."
-                sh '''
-                    docker run --rm \
-                        -v "$PWD":/app \
-                        -w /app \
-                        python:3.10 bash -c "
-                            echo '=== Current directory ===' &&
-                            pwd &&
-                            echo '=== Listing files ===' &&
-                            ls -l &&
-                            echo '=== Upgrading pip and installing dependencies ===' &&
-                            python3 -m pip install --upgrade pip setuptools wheel &&
-                            pip install -r requirements.txt &&
-                            echo '=== Running unit tests ===' &&
-                            mkdir -p reports &&
-                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                        "
-                '''
+                echo "Running unit tests inside Python container (mounting jenkins_home volume)..."
+                script {
+                    def jobWorkspace = "workspace/my-ci-cd-pipeline"
+                    sh """
+                        echo "=== Host-side workspace (Jenkins) path ==="
+                        echo "/var/jenkins_home/${jobWorkspace}"
+                        echo "=== Listing workspace on Jenkins host side (inside Jenkins container) ==="
+                        ls -la /var/jenkins_home/${jobWorkspace} || true
+
+                        echo "=== Starting python container mounting named volume 'jenkins_home' ==="
+                        docker run --rm \
+                            -v jenkins_home:/data \
+                            -w /data/${jobWorkspace} \
+                            python:3.10 bash -c '
+                                echo \"=== Inside test container: pwd ===\" &&
+                                pwd &&
+                                echo \"=== Inside test container: listing files ===\" &&
+                                ls -la ||
+                                ( echo \"Workspace empty inside container\" && exit 2 ) &&
+                                echo \"=== Upgrading pip and installing dependencies ===\" &&
+                                python3 -m pip install --upgrade pip setuptools wheel &&
+                                pip install -r requirements.txt &&
+                                mkdir -p reports &&
+                                PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                            '
+                    """
+                }
             }
         }
 
@@ -84,13 +93,13 @@ pipeline {
 
     post {
         always {
-            echo "Archiving test reports..."
+            echo "Archiving reports..."
             junit 'reports/**/*.xml'
         }
         failure {
             mail to: 'farahwael158@gmail.com',
                  subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Build failed. View details here: ${env.BUILD_URL}"
+                 body: "Jenkins build failed. Check details: ${env.BUILD_URL}"
         }
     }
 }
