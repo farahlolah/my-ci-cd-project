@@ -15,25 +15,21 @@ pipeline {
         }
 
         stage('Install & Unit Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root'
-                }
-            }
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
-                    echo "=== Checking working directory ==="
-                    pwd
-                    echo "=== Listing files ==="
-                    ls -R
-                    echo "=== Upgrading pip and installing dependencies ==="
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                    echo "=== Running inside Python container ==="
+                    docker run --rm \
+                        -v $(pwd):/app \
+                        -w /app \
+                        python:3.10 bash -c "
+                            echo '=== Checking directory contents ==='
+                            ls -R &&
+                            python3 -m pip install --upgrade pip setuptools wheel &&
+                            pip install -r requirements.txt &&
+                            mkdir -p /app/reports &&
+                            PYTHONPATH=. pytest tests/unit -q --junitxml=/app/reports/unit.xml
+                        "
                 '''
             }
         }
@@ -70,7 +66,15 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 echo "Running integration tests..."
-                sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
+                sh '''
+                    docker run --rm \
+                        -v $(pwd):/app \
+                        -w /app \
+                        python:3.10 bash -c "
+                            echo '=== Running integration tests ==='
+                            PYTHONPATH=. pytest tests/integration -q --junitxml=/app/reports/integration.xml
+                        "
+                '''
             }
         }
 
