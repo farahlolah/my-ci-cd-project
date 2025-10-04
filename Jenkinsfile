@@ -7,6 +7,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo "Pulling latest code from GitHub..."
@@ -16,14 +17,20 @@ pipeline {
 
         stage('Install & Unit Tests') {
             steps {
-                echo "Running unit tests inside Python container..."
+                echo "Installing dependencies and running unit tests inside Python container..."
                 sh '''
                     docker run --rm \
                         -v "$PWD":/app \
                         -w /app \
-                        python:3.10 /bin/bash -c "
+                        python:3.10 bash -c "
+                            echo '=== Current directory ===' &&
+                            pwd &&
+                            echo '=== Listing files ===' &&
+                            ls -l &&
+                            echo '=== Upgrading pip and installing dependencies ===' &&
                             python3 -m pip install --upgrade pip setuptools wheel &&
                             pip install -r requirements.txt &&
+                            echo '=== Running unit tests ===' &&
                             mkdir -p reports &&
                             PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                         "
@@ -63,16 +70,7 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 echo "Running integration tests..."
-                sh '''
-                    docker run --rm \
-                        -v "$PWD":/app \
-                        -w /app \
-                        python:3.10 /bin/bash -c "
-                            pip install -r requirements.txt &&
-                            mkdir -p reports &&
-                            PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                        "
-                '''
+                sh 'PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml'
             }
         }
 
@@ -92,7 +90,7 @@ pipeline {
         failure {
             mail to: 'farahwael158@gmail.com',
                  subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Build failed. Check Jenkins for details: ${env.BUILD_URL}"
+                 body: "Build failed. View details here: ${env.BUILD_URL}"
         }
     }
 }
