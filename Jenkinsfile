@@ -24,15 +24,15 @@ pipeline {
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
-                    echo "=== Running inside Python container ==="
-                    docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
-                        echo '=== Checking directory contents ==='
-                        ls -R &&
-                        python3 -m pip install --upgrade pip setuptools wheel &&
-                        pip install -r requirements.txt &&
-                        mkdir -p /app/my-ci-cd-pipeline/reports &&
-                        PYTHONPATH=. pytest tests/unit -q --junitxml=/app/my-ci-cd-pipeline/reports/unit.xml
-                    "
+                    echo "=== Checking directory contents ==="
+                    pwd
+                    ls -R
+                    echo "=== Installing dependencies ==="
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r requirements.txt
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                 '''
             }
         }
@@ -58,18 +58,13 @@ pipeline {
 
         stage('Deploy to Staging') {
             steps {
-                echo "Deploying to staging environment..."
+                echo "Cleaning up any old network or containers..."
                 sh '''
-                    echo "Cleaning up any old network or containers..."
                     docker stop my-ci-cd-pipeline_app_1 || true
                     docker rm my-ci-cd-pipeline_app_1 || true
                     docker stop my-ci-cd-pipeline_prometheus_1 || true
                     docker rm my-ci-cd-pipeline_prometheus_1 || true
                     docker network rm my-ci-cd-pipeline_default || true
-
-                    echo "prometheus.yml already exists — skipping copy."
-                    ls -l prometheus.yml
-
                     echo "Starting new staging environment..."
                     docker-compose -f docker-compose.staging.yml up -d --build
                     sleep 5
@@ -78,12 +73,17 @@ pipeline {
         }
 
         stage('Integration Tests') {
+            agent {
+                docker {
+                    image 'python:3.10'
+                    args '-u root'
+                }
+            }
             steps {
                 echo "Running integration tests..."
                 sh '''
-                    docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
-                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/my-ci-cd-pipeline/reports/integration.xml
-                    "
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                 '''
             }
         }
@@ -99,7 +99,6 @@ pipeline {
     post {
         always {
             echo "Archiving test reports..."
-            junit 'my-ci-cd-pipeline/reports/**/*.xml'
             junit 'reports/**/*.xml'
         }
         failure {
