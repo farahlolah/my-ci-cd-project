@@ -14,7 +14,6 @@ pipeline {
             }
         }
 
-
         stage('Install & Unit Tests') {
             agent {
                 docker {
@@ -25,25 +24,24 @@ pipeline {
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
+                    echo "=== Running inside Python container ==="
                     echo "=== Checking directory contents ==="
                     ls -R
+
                     echo "=== Upgrading pip and installing dependencies ==="
                     python3 -m pip install --upgrade pip setuptools wheel
                     pip install -r requirements.txt
-echo "=== Running unit tests ==="
-mkdir -p reports
-PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
 
-echo "=== Listing reports directory ==="
-ls -l reports || true
-
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
                 '''
             }
         }
 
         stage('Static Analysis') {
             steps {
-                echo "Skipping static analysis (placeholder stage)..."
+                echo "Running static analysis (placeholder stage)..."
             }
         }
 
@@ -64,6 +62,12 @@ ls -l reports || true
             steps {
                 echo "Deploying to staging environment..."
                 sh '''
+                    echo "Cleaning up any old network or containers..."
+                    docker stop my-ci-cd-pipeline_app_1 || true
+                    docker rm my-ci-cd-pipeline_app_1 || true
+                    docker network rm my-ci-cd-pipeline_default || true
+
+                    echo "Starting new staging environment..."
                     docker-compose -f docker-compose.staging.yml up -d --build
                     sleep 5
                 '''
@@ -71,18 +75,12 @@ ls -l reports || true
         }
 
         stage('Integration Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root'
-                }
-            }
             steps {
                 echo "Running integration tests..."
                 sh '''
-                    echo "=== Running integration tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                    docker run --rm -v $WORKSPACE:/app -w /app python:3.10 bash -c "
+                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/reports/integration.xml
+                    "
                 '''
             }
         }
