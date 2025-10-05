@@ -2,15 +2,23 @@ FROM jenkins/jenkins:lts
 
 USER root
 
-# Install Docker CLI & Docker Compose
-RUN apt-get update && \
-    apt-get install -y docker.io curl jq && \
-    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" \
+# Install Docker CLI and Docker Compose inside Jenkins container
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    docker.io
+
+# Install docker-compose manually
+RUN curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" \
     -o /usr/local/bin/docker-compose && \
-    chmod +x /usr/local/bin/docker-compose && \
-    apt-get clean
+    chmod +x /usr/local/bin/docker-compose
 
-# Give Jenkins access to Docker
-RUN usermod -aG docker jenkins
+# Verify installation
+RUN docker-compose --version
 
+# Switch back to Jenkins user
 USER jenkins
