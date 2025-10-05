@@ -1,27 +1,30 @@
 version: '3.8'
 
+networks:
+  my-ci-cd-pipeline_default:
+    driver: bridge
+
 services:
   app:
-    container_name: my-ci-cd-pipeline_app_1
     image: yourdockerhubusername/myapp:staging
+    container_name: my-ci-cd-pipeline_app_1
     ports:
       - "8081:8080"
+    networks:
+      - my-ci-cd-pipeline_default
     restart: always
 
   prometheus:
+    image: prom/prometheus
     container_name: my-ci-cd-pipeline_prometheus_1
-    image: prom/prometheus:latest
     volumes:
-      # Explicit absolute path to avoid Jenkins workspace mount confusion
+
       - /var/jenkins_home/workspace/my-ci-cd-pipeline/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
     ports:
       - "9090:9090"
+    networks:
+      - my-ci-cd-pipeline_default
     restart: always
-
-networks:
-  default:
-    name: my-ci-cd-pipeline_default
-    driver: bridge
