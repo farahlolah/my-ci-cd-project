@@ -18,8 +18,7 @@ services:
     image: prom/prometheus
     container_name: my-ci-cd-pipeline_prometheus_1
     volumes:
-
-      - /var/jenkins_home/workspace/my-ci-cd-pipeline/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
