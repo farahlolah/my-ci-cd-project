@@ -24,18 +24,15 @@ pipeline {
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
-                    echo "=== Checking working directory ==="
-                    pwd
-                    echo "=== Listing files ==="
-                    ls -R
-
-                    echo "=== Upgrading pip and installing dependencies ==="
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                    echo "=== Running inside Python container ==="
+                    docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
+                        echo '=== Checking directory contents ==='
+                        ls -R &&
+                        python3 -m pip install --upgrade pip setuptools wheel &&
+                        pip install -r requirements.txt &&
+                        mkdir -p /app/my-ci-cd-pipeline/reports &&
+                        PYTHONPATH=. pytest tests/unit -q --junitxml=/app/my-ci-cd-pipeline/reports/unit.xml
+                    "
                 '''
             }
         }
@@ -70,8 +67,8 @@ pipeline {
                     docker rm my-ci-cd-pipeline_prometheus_1 || true
                     docker network rm my-ci-cd-pipeline_default || true
 
-                    echo "Copying prometheus.yml to working directory..."
-                    cp $WORKSPACE/prometheus.yml ./prometheus.yml
+                    echo "prometheus.yml already exists — skipping copy."
+                    ls -l prometheus.yml
 
                     echo "Starting new staging environment..."
                     docker-compose -f docker-compose.staging.yml up -d --build
@@ -84,7 +81,9 @@ pipeline {
             steps {
                 echo "Running integration tests..."
                 sh '''
-                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                    docker run --rm -v $WORKSPACE:/app -w /app/my-ci-cd-pipeline python:3.10 bash -c "
+                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/my-ci-cd-pipeline/reports/integration.xml
+                    "
                 '''
             }
         }
@@ -100,6 +99,7 @@ pipeline {
     post {
         always {
             echo "Archiving test reports..."
+            junit 'my-ci-cd-pipeline/reports/**/*.xml'
             junit 'reports/**/*.xml'
         }
         failure {
