@@ -24,8 +24,9 @@ pipeline {
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
-                    echo "=== Running inside Python container ==="
-                    echo "=== Checking directory contents ==="
+                    echo "=== Checking working directory ==="
+                    pwd
+                    echo "=== Listing files ==="
                     ls -R
 
                     echo "=== Upgrading pip and installing dependencies ==="
@@ -41,7 +42,7 @@ pipeline {
 
         stage('Static Analysis') {
             steps {
-                echo "Running static analysis (placeholder stage)..."
+                echo "Skipping static analysis (placeholder stage)..."
             }
         }
 
@@ -65,7 +66,12 @@ pipeline {
                     echo "Cleaning up any old network or containers..."
                     docker stop my-ci-cd-pipeline_app_1 || true
                     docker rm my-ci-cd-pipeline_app_1 || true
+                    docker stop my-ci-cd-pipeline_prometheus_1 || true
+                    docker rm my-ci-cd-pipeline_prometheus_1 || true
                     docker network rm my-ci-cd-pipeline_default || true
+
+                    echo "Copying prometheus.yml to working directory..."
+                    cp $WORKSPACE/prometheus.yml ./prometheus.yml
 
                     echo "Starting new staging environment..."
                     docker-compose -f docker-compose.staging.yml up -d --build
@@ -78,9 +84,7 @@ pipeline {
             steps {
                 echo "Running integration tests..."
                 sh '''
-                    docker run --rm -v $WORKSPACE:/app -w /app python:3.10 bash -c "
-                        PYTHONPATH=. pytest tests/integration -q --junitxml=/app/reports/integration.xml
-                    "
+                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                 '''
             }
         }
