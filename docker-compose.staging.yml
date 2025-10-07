@@ -11,14 +11,14 @@ services:
     image: prom/prometheus
     container_name: my-ci-cd-pipeline_prometheus_1
     volumes:
-      # Makes sure prometheus.yml is a FILE not a folder
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/config.yml
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--config.file=/etc/prometheus/config.yml'
       - '--storage.tsdb.path=/prometheus'
     ports:
       - "9090:9090"
+
 
 volumes:
   prometheus_data:
