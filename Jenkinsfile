@@ -57,62 +57,36 @@ pipeline {
             }
         }
 
-stage('Deploy to Staging') {
-    steps {
-        echo "=== Cleaning up old containers and network ==="
-        powershell '''
-            # Stop and remove old containers safely
-            Write-Host "Stopping and removing old containers..."
-            
-            docker stop my-ci-cd-pipeline_app_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No app container found" }
+        stage('Deploy to Staging') {
+            steps {
+                echo "=== Cleaning up old containers and network ==="
+                sh '''
+                    docker stop prometheus || echo "No prometheus container found"
+                    docker rm prometheus || echo "Prometheus container already removed"
 
-            docker rm my-ci-cd-pipeline_app_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "App container already removed" }
+                    docker stop my-ci-cd-pipeline_app_1 || echo "No app container found"
+                    docker rm my-ci-cd-pipeline_app_1 || echo "App container already removed"
 
-            docker stop prometheus 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No prometheus container found" }
+                    docker stop my-ci-cd-pipeline_prometheus_1 || echo "No prometheus container found"
+                    docker rm my-ci-cd-pipeline_prometheus_1 || echo "Prometheus container already removed"
 
-            docker rm prometheus 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "Prometheus container already removed" }
+                    docker network rm my-ci-cd-pipeline_default || echo "No default network found"
+                    docker network rm my-ci-cd-pipeline_my-ci-cd-pipeline_default || echo "No secondary default network found"
 
-            docker stop my-ci-cd-pipeline_prometheus_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No secondary prometheus container found" }
+                    echo "=== Checking if prometheus.yml exists ==="
+                    if [ ! -f ./prometheus.yml ]; then
+                        echo "Copying prometheus.yml to workspace..."
+                        cp /var/jenkins_home/workspace/my-ci-cd-pipeline/prometheus.yml ./prometheus.yml
+                    else
+                        echo "prometheus.yml already exists, skipping copy."
+                    fi
 
-            docker rm my-ci-cd-pipeline_prometheus_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "Secondary Prometheus container already removed" }
-
-            # Remove possible leftover networks
-            docker network rm my-ci-cd-pipeline_default 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No default network found" }
-
-            docker network rm my-ci-cd-pipeline_my-ci-cd-pipeline_default 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No secondary network found" }
-
-            # Ensure prometheus.yml exists in workspace
-            Write-Host "=== Checking for prometheus.yml ==="
-            if (Test-Path "./prometheus.yml") {
-                Write-Host "prometheus.yml already exists, skipping copy."
-            } else {
-                Copy-Item "C:\\Users\\Default.DESKTOP-ROGCKJH\\Downloads\\my-ci-cd-project\\prometheus.yml" "./prometheus.yml"
-                Write-Host "Copied prometheus.yml to working directory."
+                    echo "=== Starting new staging environment ==="
+                    docker-compose -f docker-compose.staging.yml up -d --build
+                    sleep 5
+                '''
             }
-
-            # Start staging environment
-            Write-Host "=== Starting new staging environment ==="
-            docker-compose -f docker-compose.staging.yml up -d --build
-
-            # Wait briefly for services to boot
-            Start-Sleep -Seconds 5
-
-            # Show running containers
-            Write-Host "=== Running containers ==="
-            docker ps
-        '''
-    }
-}
-
-
+        }
 
         stage('Integration Tests') {
             agent {
