@@ -51,11 +51,12 @@ pipeline {
                         def img = docker.build("${env.DOCKER_IMAGE}:${env.BUILD_NUMBER}")
                         img.push()
                         img.push('latest')
+                        img.push('staging')
                     }
                 }
             }
         }
-        
+
 stage('Deploy to Staging') {
     steps {
         echo "Cleaning up old containers and network, then starting staging environment..."
