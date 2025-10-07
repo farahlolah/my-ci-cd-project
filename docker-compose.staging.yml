@@ -1,26 +1,22 @@
-version: '3.8'
-
 services:
   app:
-    container_name: my-ci-cd-pipeline_app_1
     image: farah16629/myapp:staging
+    container_name: my-ci-cd-pipeline_app_1
     ports:
       - "8081:8080"
-    restart: always
 
   prometheus:
+    image: prom/prometheus
     container_name: my-ci-cd-pipeline_prometheus_1
-    image: prom/prometheus:latest
-    # Use absolute path to avoid Jenkins' internal workspace path confusion
+
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
     ports:
       - "9090:9090"
-    restart: always
 
-networks:
-  default:
-    name: my-ci-cd-pipeline_default
+volumes:
+  prometheus_data:
