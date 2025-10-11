@@ -58,36 +58,56 @@ pipeline {
             }
         }
 
-        stage('Deploy to Staging') {
-            steps {
-                echo "=== Cleaning up old containers and network ==="
-                sh '''
-                    docker stop prometheus || echo "No prometheus container found"
-                    docker rm prometheus || echo "Prometheus container already removed"
+stage('Deploy to Staging') {
+    steps {
+        echo "=== Deploying to Staging Environment (PowerShell compatible) ==="
+        powershell '''
+            Write-Host "=== Cleaning up old containers and network ==="
 
-                    docker stop my-ci-cd-pipeline_app_1 || echo "No app container found"
-                    docker rm my-ci-cd-pipeline_app_1 || echo "App container already removed"
+            # Stop and remove old app container
+            docker stop my-ci-cd-pipeline_app_1 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "No app container found" }
 
-                    docker stop my-ci-cd-pipeline_prometheus_1 || echo "No prometheus container found"
-                    docker rm my-ci-cd-pipeline_prometheus_1 || echo "Prometheus container already removed"
+            docker rm my-ci-cd-pipeline_app_1 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "App container already removed" }
 
-                    docker network rm my-ci-cd-pipeline_default || echo "No default network found"
-                    docker network rm my-ci-cd-pipeline_my-ci-cd-pipeline_default || echo "No secondary default network found"
+            # Stop and remove old Prometheus container
+            docker stop my-ci-cd-pipeline_prometheus_1 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "No Prometheus container found" }
 
-                    echo "=== Checking if prometheus.yml exists ==="
-                    if [ ! -f ./prometheus.yml ]; then
-                        echo "Copying prometheus.yml to workspace..."
-                        cp /var/jenkins_home/workspace/my-ci-cd-pipeline/prometheus.yml ./prometheus.yml
-                    else
-                        echo "prometheus.yml already exists, skipping copy."
-                    fi
+            docker rm my-ci-cd-pipeline_prometheus_1 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "Prometheus container already removed" }
 
-                    echo "=== Starting new staging environment ==="
-                    docker-compose -f docker-compose.staging.yml up -d --build
-                    sleep 5
-                '''
+            # Remove any networks related to the project
+            docker network rm my-ci-cd-pipeline_default 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "No default network found" }
+
+            docker network rm my-ci-cd-project_my-ci-cd-pipeline-net 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "No secondary network found" }
+
+            # Double cleanup — remove any leftover containers matching project name
+            Write-Host "=== Checking for stray containers ==="
+            $containers = docker ps -aq --filter "name=my-ci-cd-pipeline"
+            if ($containers) {
+                Write-Host "Removing leftover containers..."
+                $containers | ForEach-Object { docker rm -f $_ }
+            } else {
+                Write-Host "No leftover containers found."
             }
-        }
+
+            # Start fresh staging environment
+            Write-Host "=== Starting new staging environment ==="
+            docker-compose -f "C:\\Users\\Default.DESKTOP-ROGCKJH\\Downloads\\my-ci-cd-project\\docker-compose.staging.yml" up -d --build
+
+            Write-Host "=== Waiting for containers to start ==="
+            Start-Sleep -Seconds 5
+
+            Write-Host "=== Listing running containers ==="
+            docker ps
+        '''
+    }
+}
+
 
         stage('Integration Tests') {
             steps {
