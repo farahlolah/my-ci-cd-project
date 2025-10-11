@@ -97,7 +97,7 @@ pipeline {
                     mkdir -p reports
 
                     echo "=== Waiting for app to start ==="
-                    for i in {1..20}; do
+                    for i in $(seq 1 20); do
                         if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
                             echo "App is ready!"
                             break
@@ -111,6 +111,10 @@ pipeline {
                         --network my-ci-cd-pipeline_default \
                         -v $WORKSPACE:/workspace -w /workspace \
                         python:3.10 bash -c "
+                            echo '=== Checking files inside container ==='
+                            ls -l /workspace
+                            python3 -m pip install --upgrade pip setuptools wheel
+                            pip install -r requirements.txt
                             PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                         "
                 '''
