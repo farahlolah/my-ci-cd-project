@@ -14,20 +14,21 @@ pipeline {
             }
         }
 
-    stage('Install & Unit Tests') {
+    stage('Integration Tests') {
         agent {
             docker {
                 image 'python:3.10'
-                args '-v $WORKSPACE:/workspace -w /workspace -u root'
+                args '-u root -v $WORKSPACE:/workspace -w /workspace'
             }
         }
         steps {
-            echo "Installing dependencies and running unit tests..."
+            echo "Running integration tests..."
             sh '''
+                echo "=== Running integration tests ==="
                 mkdir -p reports
                 python3 -m pip install --upgrade pip setuptools wheel
                 pip install -r requirements.txt
-                PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
             '''
         }
     }
