@@ -109,7 +109,7 @@ pipeline {
                     echo "=== Running integration tests ==="
                     docker run --rm \
                         --network my-ci-cd-pipeline_default \
-                        -v $PWD:/workspace -w /workspace \
+                        -v $WORKSPACE:/workspace -w /workspace \
                         python:3.10 bash -c "
                             pip install -r requirements.txt &&
                             PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
