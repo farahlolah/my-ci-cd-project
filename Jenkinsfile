@@ -7,6 +7,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo "Pulling latest code from GitHub..."
@@ -89,20 +90,30 @@ pipeline {
         }
 
         stage('Integration Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root -v $WORKSPACE:/workspace -w /workspace'
-                }
-            }
             steps {
-                echo "Running integration tests..."
+                echo "Running integration tests inside staging network..."
                 sh '''
                     echo "=== Running integration tests ==="
                     mkdir -p reports
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+
+                    echo "=== Waiting for app to start ==="
+                    for i in {1..20}; do
+                        if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
+                            echo "App is ready!"
+                            break
+                        fi
+                        echo "Waiting for app... ($i)"
+                        sleep 2
+                    done
+
+                    echo "=== Running integration tests ==="
+                    docker run --rm \
+                        --network my-ci-cd-pipeline_default \
+                        -v $PWD:/workspace -w /workspace \
+                        python:3.10 bash -c "
+                            pip install -r requirements.txt &&
+                            PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                        "
                 '''
             }
         }
@@ -126,6 +137,7 @@ pipeline {
                 }
             }
         }
+
         failure {
             echo "Build failed. Email notification skipped (SMTP not configured)."
             // Uncomment and configure SMTP if needed:
