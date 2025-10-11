@@ -88,21 +88,38 @@ pipeline {
             }
         }
 
-        stage('Integration Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root'
-                }
-            }
-            steps {
-                echo "Running integration tests..."
-                sh '''
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                '''
-            }
-        }
+stage('Integration Tests') {
+    steps {
+        echo "Running integration tests..."
+        sh '''
+            echo "=== Preparing for integration tests ==="
+            mkdir -p reports
+
+            echo "=== Waiting for app to start ==="
+            for i in $(seq 1 20); do
+                if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
+                    echo "App is up!"
+                    break
+                fi
+                echo "Waiting for app... ($i)"
+                sleep 2
+            done
+
+            echo "=== Running integration tests ==="
+            docker run --rm --network my-ci-cd-pipeline_default \
+                -v /var/jenkins_home/workspace/my-ci-cd-pipeline:/workspace \
+                -w /workspace/my-ci-cd-pipeline \
+                python:3.10 bash -c "
+                    echo '=== Checking files inside container ==='
+                    ls -R /workspace
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r /workspace/requirements.txt
+                    PYTHONPATH=/workspace pytest tests/integration -q --junitxml=/workspace/reports/integration.xml
+                "
+        '''
+    }
+}
+
 
         stage('Deploy to Production') {
             steps {
