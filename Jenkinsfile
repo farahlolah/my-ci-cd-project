@@ -61,50 +61,12 @@ pipeline {
 stage('Deploy to Staging') {
     steps {
         echo "=== Deploying to Staging Environment (PowerShell compatible) ==="
-        powershell '''
-            Write-Host "=== Cleaning up old containers and network ==="
+sh '''
+docker stop my-ci-cd-pipeline_prometheus_1 || echo "No container found"
+docker rm my-ci-cd-pipeline_prometheus_1 || echo "Already removed"
+docker-compose -f docker-compose.staging.yml up -d --build
+'''
 
-            # Stop and remove old app container
-            docker stop my-ci-cd-pipeline_app_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No app container found" }
-
-            docker rm my-ci-cd-pipeline_app_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "App container already removed" }
-
-            # Stop and remove old Prometheus container
-            docker stop my-ci-cd-pipeline_prometheus_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No Prometheus container found" }
-
-            docker rm my-ci-cd-pipeline_prometheus_1 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "Prometheus container already removed" }
-
-            # Remove any networks related to the project
-            docker network rm my-ci-cd-pipeline_default 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No default network found" }
-
-            docker network rm my-ci-cd-project_my-ci-cd-pipeline-net 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "No secondary network found" }
-
-            # Double cleanup — remove any leftover containers matching project name
-            Write-Host "=== Checking for stray containers ==="
-            $containers = docker ps -aq --filter "name=my-ci-cd-pipeline"
-            if ($containers) {
-                Write-Host "Removing leftover containers..."
-                $containers | ForEach-Object { docker rm -f $_ }
-            } else {
-                Write-Host "No leftover containers found."
-            }
-
-            # Start fresh staging environment
-            Write-Host "=== Starting new staging environment ==="
-            docker-compose -f "C:\\Users\\Default.DESKTOP-ROGCKJH\\Downloads\\my-ci-cd-project\\docker-compose.staging.yml" up -d --build
-
-            Write-Host "=== Waiting for containers to start ==="
-            Start-Sleep -Seconds 5
-
-            Write-Host "=== Listing running containers ==="
-            docker ps
-        '''
     }
 }
 
