@@ -14,24 +14,28 @@ pipeline {
             }
         }
 
-    stage('Integration Tests') {
-        agent {
-            docker {
-                image 'python:3.10'
-                args '-u root -v $WORKSPACE:/workspace -w /workspace'
+        stage('Install & Unit Tests') {
+            agent {
+                docker {
+                    image 'python:3.10'
+                    args '-u root -v $WORKSPACE:/workspace -w /workspace'
+                }
+            }
+            steps {
+                echo "Installing dependencies and running unit tests..."
+                sh '''
+                    echo "=== Checking directory contents ==="
+                    pwd
+                    ls -R
+                    echo "=== Installing dependencies ==="
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r requirements.txt
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                '''
             }
         }
-        steps {
-            echo "Running integration tests..."
-            sh '''
-                echo "=== Running integration tests ==="
-                mkdir -p reports
-                python3 -m pip install --upgrade pip setuptools wheel
-                pip install -r requirements.txt
-                PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-            '''
-        }
-    }
 
         stage('Static Analysis') {
             steps {
@@ -88,7 +92,7 @@ pipeline {
             agent {
                 docker {
                     image 'python:3.10'
-                    args '-u root'
+                    args '-u root -v $WORKSPACE:/workspace -w /workspace'
                 }
             }
             steps {
@@ -96,6 +100,8 @@ pipeline {
                 sh '''
                     echo "=== Running integration tests ==="
                     mkdir -p reports
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    pip install -r requirements.txt
                     PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                 '''
             }
@@ -111,13 +117,21 @@ pipeline {
 
     post {
         always {
-            echo "Archiving test reports..."
-            junit 'reports/**/*.xml'
+            script {
+                if (fileExists('reports')) {
+                    echo "Archiving test reports..."
+                    junit 'reports/**/*.xml'
+                } else {
+                    echo "No test reports found. Skipping JUnit archiving."
+                }
+            }
         }
         failure {
-            mail to: 'farahwael158@gmail.com',
-                 subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-                 body: "Build failed. View details here: ${env.BUILD_URL}"
+            echo "Build failed. Email notification skipped (SMTP not configured)."
+            // Uncomment and configure SMTP if needed:
+            // mail to: 'farahwael158@gmail.com',
+            //      subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
+            //      body: "Build failed. View details here: ${env.BUILD_URL}"
         }
     }
 }
