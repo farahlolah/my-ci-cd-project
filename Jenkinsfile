@@ -111,7 +111,6 @@ pipeline {
                         --network my-ci-cd-pipeline_default \
                         -v $WORKSPACE:/workspace -w /workspace \
                         python:3.10 bash -c "
-                            pip install -r requirements.txt &&
                             PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                         "
                 '''
