@@ -16,31 +16,26 @@ pipeline {
         }
 
         stage('Install & Unit Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root -v $WORKSPACE:/workspace -w /workspace'
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            echo "=== Running on Linux Shell ==="
+                            python3 -m pip install --upgrade pip setuptools wheel
+                            pip install -r requirements.txt
+                            mkdir -p reports
+                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                        '''
+                    } else {
+                        powershell '''
+                            Write-Host "=== Running on Windows PowerShell ==="
+                            python -m pip install --upgrade pip setuptools wheel
+                            pip install -r requirements.txt
+                            if (!(Test-Path "reports")) { New-Item -ItemType Directory -Path "reports" }
+                            pytest tests/unit -q --junitxml=reports/unit.xml
+                        '''
+                    }
                 }
-            }
-            steps {
-                echo "Installing dependencies and running unit tests..."
-                sh '''
-                    echo "=== Checking directory contents ==="
-                    pwd
-                    ls -R
-                    echo "=== Installing dependencies ==="
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                '''
-            }
-        }
-
-        stage('Static Analysis') {
-            steps {
-                echo "Skipping static analysis (placeholder stage)..."
             }
         }
 
@@ -58,48 +53,77 @@ pipeline {
             }
         }
 
-stage('Deploy to Staging') {
-    steps {
-        echo "=== Deploying to Staging Environment (PowerShell compatible) ==="
-sh '''
-docker stop my-ci-cd-pipeline_prometheus_1 || echo "No container found"
-docker rm my-ci-cd-pipeline_prometheus_1 || echo "Already removed"
-docker-compose -f docker-compose.staging.yml up -d --build
-'''
+        stage('Deploy to Staging') {
+            steps {
+                script {
+                    echo "=== Cleaning up old containers and network ==="
 
-    }
-}
+                    if (isUnix()) {
+                        sh '''
+                            docker stop my-ci-cd-pipeline_prometheus_1 || true
+                            docker rm my-ci-cd-pipeline_prometheus_1 || true
+                            docker stop my-ci-cd-pipeline_app_1 || true
+                            docker rm my-ci-cd-pipeline_app_1 || true
+                            docker network rm my-ci-cd-pipeline_default || true
 
+                            echo "=== Starting staging environment with docker-compose ==="
+                            docker-compose -f docker-compose.staging.yml up -d --build
+                        '''
+                    } else {
+                        powershell '''
+                            Write-Host "=== Cleaning up old containers and network ==="
+                            docker stop my-ci-cd-pipeline_prometheus_1 2>$null
+                            if ($LASTEXITCODE -ne 0) { Write-Host "No Prometheus container found" }
+                            docker rm my-ci-cd-pipeline_prometheus_1 2>$null
+                            if ($LASTEXITCODE -ne 0) { Write-Host "Prometheus container already removed" }
+
+                            docker stop my-ci-cd-pipeline_app_1 2>$null
+                            if ($LASTEXITCODE -ne 0) { Write-Host "No App container found" }
+                            docker rm my-ci-cd-pipeline_app_1 2>$null
+                            if ($LASTEXITCODE -ne 0) { Write-Host "App container already removed" }
+
+                            docker network rm my-ci-cd-pipeline_default 2>$null
+                            if ($LASTEXITCODE -ne 0) { Write-Host "No default network found" }
+
+                            Write-Host "=== Starting staging environment with docker-compose ==="
+                            docker-compose -f docker-compose.staging.yml up -d --build
+                        '''
+                    }
+                }
+            }
+        }
 
         stage('Integration Tests') {
             steps {
-                echo "Running integration tests..."
-                sh '''
-                    echo "=== Preparing for integration tests ==="
-                    mkdir -p reports
+                script {
+                    echo "Running integration tests..."
+                    sh '''
+                        echo "=== Preparing for integration tests ==="
+                        mkdir -p reports
 
-                    echo "=== Waiting for app to start ==="
-                    for i in $(seq 1 20); do
-                        if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
-                            echo "App is up!"
-                            break
-                        fi
-                        echo "Waiting for app... ($i)"
-                        sleep 2
-                    done
+                        echo "=== Waiting for app to start ==="
+                        for i in $(seq 1 20); do
+                            if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
+                                echo "App is up!"
+                                break
+                            fi
+                            echo "Waiting for app... ($i)"
+                            sleep 2
+                        done
 
-                    echo "=== Running integration tests ==="
-                    docker run --rm --network my-ci-cd-pipeline_default \
-                        -v /var/jenkins_home/workspace/my-ci-cd-pipeline:/workspace \
-                        -w /workspace/my-ci-cd-pipeline \
-                        python:3.10 bash -c "
-                            echo '=== Checking files inside container ==='
-                            ls -R /workspace
-                            python3 -m pip install --upgrade pip setuptools wheel
-                            pip install -r /workspace/requirements.txt
-                            PYTHONPATH=/workspace pytest tests/integration -q --junitxml=/workspace/reports/integration.xml
-                        "
-                '''
+                        echo "=== Running integration tests ==="
+                        docker run --rm --network my-ci-cd-pipeline_default \
+                            -v /var/jenkins_home/workspace/my-ci-cd-pipeline:/workspace \
+                            -w /workspace \
+                            python:3.10 bash -c "
+                                echo '=== Checking files inside container ==='
+                                ls -R /workspace
+                                python3 -m pip install --upgrade pip setuptools wheel
+                                pip install -r requirements.txt
+                                PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                            "
+                    '''
+                }
             }
         }
 
@@ -125,10 +149,6 @@ docker-compose -f docker-compose.staging.yml up -d --build
 
         failure {
             echo "Build failed. Email notification skipped (SMTP not configured)."
-            // Uncomment and configure SMTP if needed:
-            // mail to: 'farahwael158@gmail.com',
-            //      subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
-            //      body: "Build failed. View details here: ${env.BUILD_URL}"
         }
     }
 }
