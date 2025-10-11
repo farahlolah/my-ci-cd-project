@@ -95,6 +95,15 @@ pipeline {
                     args '-u root'
                 }
             }
+            steps {
+                echo "Running integration tests..."
+                sh '''
+                    echo "=== Running integration tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                '''
+            }
+        }
 
         stage('Deploy to Production') {
             steps {
