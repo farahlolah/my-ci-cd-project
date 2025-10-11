@@ -14,28 +14,23 @@ pipeline {
             }
         }
 
-        stage('Install & Unit Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root'
-                }
-            }
-            steps {
-                echo "Installing dependencies and running unit tests..."
-                sh '''
-                    echo "=== Checking directory contents ==="
-                    pwd
-                    ls -R
-                    echo "=== Installing dependencies ==="
-                    python3 -m pip install --upgrade pip setuptools wheel
-                    pip install -r requirements.txt
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                '''
+    stage('Install & Unit Tests') {
+        agent {
+            docker {
+                image 'python:3.10'
+                args '-v $WORKSPACE:/workspace -w /workspace -u root'
             }
         }
+        steps {
+            echo "Installing dependencies and running unit tests..."
+            sh '''
+                mkdir -p reports
+                python3 -m pip install --upgrade pip setuptools wheel
+                pip install -r requirements.txt
+                PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+            '''
+        }
+    }
 
         stage('Static Analysis') {
             steps {
