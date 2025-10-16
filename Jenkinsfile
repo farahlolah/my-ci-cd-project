@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10'
+            args '-v ${WORKSPACE}:/workspace -w /workspace'  // Use Unix-style in container
+        }
+    }
 
     environment {
         DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
