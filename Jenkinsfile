@@ -110,35 +110,34 @@ pipeline {
 
         stage('Integration Tests') {
             steps {
-                script {
-                    echo "Running integration tests..."
-                    sh '''
-                        echo "=== Preparing for integration tests ==="
-                        mkdir -p reports
+                echo "Running integration tests inside staging network..."
+                sh '''
+                    echo "=== Running integration tests ==="
+                    mkdir -p reports
 
-                        echo "=== Waiting for app to start ==="
-                        for i in $(seq 1 20); do
-                            if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
-                                echo "App is up!"
-                                break
-                            fi
-                            echo "Waiting for app... ($i)"
-                            sleep 2
-                        done
+                    echo "=== Waiting for app to start ==="
+                    for i in $(seq 1 20); do
+                        if docker exec my-ci-cd-pipeline_app_1 curl -s http://localhost:8080/metrics > /dev/null; then
+                            echo "App is ready!"
+                            break
+                        fi
+                        echo "Waiting for app... ($i)"
+                        sleep 2
+                    done
 
-                        echo "=== Running integration tests ==="
-                        docker run --rm --network my-ci-cd-pipeline_default \
-                            -v /var/jenkins_home/workspace/my-ci-cd-pipeline:/workspace \
-                            -w /workspace \
-                            python:3.10 bash -c "
-                                echo '=== Checking files inside container ==='
-                                ls -R /workspace
-                                python3 -m pip install --upgrade pip setuptools wheel
-                                pip install -r requirements.txt
-                                PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                            "
-                    '''
-                }
+                    echo "=== Running integration tests ==="
+                    docker run --rm \
+                        --network my-ci-cd-pipeline_default \
+                        -v $WORKSPACE:/workspace -w /workspace \
+                        python:3.10 bash -c "
+                            echo '=== Checking files inside container ==='
+                            ls -l /workspace
+                            python3 -m pip install --upgrade pip setuptools wheel
+                            pip install flask pytest
+                            if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
+                            PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
+                        "
+                '''
             }
         }
 
