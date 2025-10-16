@@ -2,33 +2,31 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
         DOCKER_IMAGE = "farah16629/myapp"
+        STAGING_COMPOSE = "docker-compose.staging.yml"
+        PROD_COMPOSE = "docker-compose.prod.yml"
     }
 
     stages {
-
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
-                echo "Pulling latest code from GitHub..."
-                git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
+                checkout scm
             }
         }
 
         stage('Install & Unit Tests') {
             steps {
                 script {
-                    echo "🐍 Setting up Python and running unit tests..."
-                    docker.image('python:3.10').inside("-u root -v ${WORKSPACE}:/workspace -w /workspace") {
-                        sh '''
-                            set -e
-                            python3 -m pip install --upgrade pip setuptools wheel
-                            if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install flask; fi
-                            pip install pytest --upgrade
-                            mkdir -p reports
-                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                        '''
-                    }
+                    echo "Installing dependencies and running unit tests..."
+                    sh '''
+                        python3 -m venv venv
+                        . venv/bin/activate
+                        pip install --upgrade pip setuptools wheel
+                        pip install -r requirements.txt
+                        if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
+                        pytest tests/unit -q --junitxml=reports/unit.xml
+                    '''
                 }
             }
         }
@@ -36,12 +34,12 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
-                    echo " Building and pushing Docker image..."
-                    docker.withRegistry('https://index.docker.io/v1/', DOCKERHUB_CREDENTIALS) {
-                        def img = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
-                        img.push()
-                        img.push('latest')
-                    }
+                    echo "🐳 Building and pushing Docker image..."
+                    sh '''
+                        docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
+                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        docker push $DOCKER_IMAGE:latest
+                    '''
                 }
             }
         }
@@ -49,12 +47,10 @@ pipeline {
         stage('Deploy to Staging') {
             steps {
                 script {
-                    echo " Deploying to staging environment..."
+                    echo "Deploying to staging..."
                     sh '''
-                        echo "=== Cleaning old containers ==="
-                        docker compose -f docker-compose.staging.yml down || true
-                        echo "=== Starting staging environment ==="
-                        docker compose -f docker-compose.staging.yml up -d --build
+                        docker compose -f ${STAGING_COMPOSE} down || true
+                        docker compose -f ${STAGING_COMPOSE} up -d --build
                     '''
                 }
             }
@@ -63,26 +59,39 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo " Running integration tests..."
-                    sh '''
-                        echo "=== Waiting for app to be ready ==="
-                        for i in $(seq 1 20); do
-                            if docker exec $(docker ps -qf "name=app") curl -s http://localhost:8080/metrics > /dev/null; then
-                                echo "App is ready!"
-                                break
-                            fi
-                            echo "Waiting for app... ($i)"
-                            sleep 3
-                        done
+                    echo "=== Waiting for app to be ready ==="
+                    def retries = 20
+                    def ready = false
 
-                        echo "=== Running integration tests ==="
-                        mkdir -p reports
+                    for (i = 1; i <= retries; i++) {
+                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
+                        if (appId) {
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
+                            if (result) {
+                                ready = true
+                                echo "App is ready after ${i} attempts"
+                                break
+                            }
+                        }
+                        echo "Waiting for app... (${i})"
+                        sleep 3
+                    }
+
+                    if (!ready) {
+                        echo " App failed to start. Showing logs..."
+                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
+                        error("App did not become ready in time.")
+                    }
+
+                    echo "🧪 Running integration tests..."
+                    sh '''
                         docker run --rm \
-                            --network my-ci-cd-project_default \
+                            --network my-ci-cd-pipeline_default \
                             -v $WORKSPACE:/workspace -w /workspace \
                             python:3.10 bash -c "
-                                python3 -m pip install --upgrade pip setuptools wheel
-                                pip install flask pytest
+                                pip install --upgrade pip setuptools wheel
+                                pip install -r requirements.txt
+                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
                                 PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                             "
                     '''
@@ -91,12 +100,17 @@ pipeline {
         }
 
         stage('Deploy to Production') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
             steps {
-                echo " Deploying to production..."
-                sh '''
-                    docker compose -f docker-compose.prod.yml down || true
-                    docker compose -f docker-compose.prod.yml up -d --build
-                '''
+                script {
+                    echo "Deploying to production..."
+                    sh '''
+                        docker compose -f ${PROD_COMPOSE} down || true
+                        docker compose -f ${PROD_COMPOSE} up -d --build
+                    '''
+                }
             }
         }
     }
@@ -104,21 +118,15 @@ pipeline {
     post {
         always {
             script {
-                if (fileExists('reports')) {
-                    echo " Archiving test reports..."
-                    junit 'reports/**/*.xml'
-                } else {
-                    echo "No test reports found. Skipping JUnit archiving."
-                }
+                echo "Archiving test reports..."
+                junit allowEmptyResults: true, testResults: 'reports/*.xml'
             }
         }
-
-        success {
-            echo " Pipeline completed successfully!"
-        }
-
         failure {
-            echo " Pipeline failed! Please check logs."
+            echo "Pipeline failed! Check the logs above."
+        }
+        success {
+            echo "Pipeline completed successfully!"
         }
     }
 }
