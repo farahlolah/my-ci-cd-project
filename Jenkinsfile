@@ -14,13 +14,27 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
             }
         }
-        stage('Install & Unit Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                    args '-u root'
+    stage('Install & Unit Tests') {
+        steps {
+            script {
+                def workspaceUnix = bat(
+                    script: 'cygpath "${WORKSPACE}"',
+                    returnStdout: true
+                ).trim()
+    
+                docker.image('python:3.10').inside("-u root -v ${workspaceUnix}:/workspace -w /workspace") {
+                    sh '''
+                        echo "=== Installing dependencies and running unit tests ==="
+                        python3 -m pip install --upgrade pip setuptools wheel
+                        pip install -r requirements.txt || pip install flask
+                        pip install pytest --upgrade
+                        mkdir -p reports
+                        PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                    '''
                 }
             }
+        }
+    }
             steps {
                 echo "Installing dependencies and running unit tests..."
                 sh '''
