@@ -86,7 +86,7 @@ pipeline {
                     echo "🧪 Running integration tests..."
                     sh '''
                         docker run --rm \
-                            --network my-ci-cd-pipeline_default \
+                            --network my-ci-cd-pipeline-net \
                             -v $WORKSPACE:/workspace -w /workspace \
                             python:3.10 bash -c "
                                 pip install --upgrade pip setuptools wheel
