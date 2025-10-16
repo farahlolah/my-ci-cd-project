@@ -14,28 +14,43 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
             }
         }
-
         stage('Install & Unit Tests') {
-            steps {
-                script {
-                    if (isUnix()) {
-                        sh '''
-                            echo "=== Running on Linux Shell ==="
-                            python3 -m pip install --upgrade pip setuptools wheel
-                            pip install -r requirements.txt
-                            mkdir -p reports
-                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                        '''
-                    } else {
-                        powershell '''
-                            Write-Host "=== Running on Windows PowerShell ==="
-                            python -m pip install --upgrade pip setuptools wheel
-                            pip install -r requirements.txt
-                            if (!(Test-Path "reports")) { New-Item -ItemType Directory -Path "reports" }
-                            pytest tests/unit -q --junitxml=reports/unit.xml
-                        '''
-                    }
+            agent {
+                docker {
+                    image 'python:3.10'
+                    args '-u root -v $WORKSPACE:/workspace -w /workspace'
                 }
+            }
+            steps {
+                echo "Installing dependencies and running unit tests..."
+                sh '''
+                    echo "=== Checking directory contents ==="
+                    pwd
+                    ls -R
+
+                    echo "=== Installing dependencies ==="
+                    python3 -m pip install --upgrade pip setuptools wheel
+
+                    # Install app dependencies
+                    if [ -f requirements.txt ]; then
+                        pip install -r requirements.txt
+                    else
+                        echo "No requirements.txt found — installing Flask manually"
+                        pip install flask
+                    fi
+
+                    # Install test dependencies
+                    if [ -f tests/requirements.txt ]; then
+                        pip install -r tests/requirements.txt
+                    fi
+
+                    # Ensure pytest is available even if requirements.txt missing
+                    pip install pytest --upgrade
+
+                    echo "=== Running unit tests ==="
+                    mkdir -p reports
+                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                '''
             }
         }
 
