@@ -14,57 +14,47 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/farahlolah/my-ci-cd-project.git'
             }
         }
-    stage('Install & Unit Tests') {
-        steps {
-            script {
-                def workspaceUnix = bat(
-                    script: 'cygpath "${WORKSPACE}"',
-                    returnStdout: true
-                ).trim()
-    
-                docker.image('python:3.10').inside("-u root -v ${workspaceUnix}:/workspace -w /workspace") {
-                    sh '''
-                        echo "=== Installing dependencies and running unit tests ==="
-                        python3 -m pip install --upgrade pip setuptools wheel
-                        pip install -r requirements.txt || pip install flask
-                        pip install pytest --upgrade
-                        mkdir -p reports
-                        PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                    '''
-                }
-            }
-        }
-    }
+
+        stage('Install & Unit Tests') {
             steps {
-                echo "Installing dependencies and running unit tests..."
-                sh '''
-                    echo "=== Checking directory contents ==="
-                    pwd
-                    ls -R
+                script {
+                    // Convert Windows path to Unix-style (for Docker compatibility)
+                    def workspaceUnix = bat(
+                        script: 'cygpath "${WORKSPACE}"',
+                        returnStdout: true
+                    ).trim()
 
-                    echo "=== Installing dependencies ==="
-                    python3 -m pip install --upgrade pip setuptools wheel
+                    docker.image('python:3.10').inside("-u root -v ${workspaceUnix}:/workspace -w /workspace") {
+                        sh '''
+                            echo "=== Installing dependencies and running unit tests ==="
+                            python3 -m pip install --upgrade pip setuptools wheel
 
-                    # Install app dependencies
-                    if [ -f requirements.txt ]; then
-                        pip install -r requirements.txt
-                    else
-                        echo "No requirements.txt found — installing Flask manually"
-                        pip install flask
-                    fi
+                            echo "=== Checking directory contents ==="
+                            pwd
+                            ls -R
 
-                    # Install test dependencies
-                    if [ -f tests/requirements.txt ]; then
-                        pip install -r tests/requirements.txt
-                    fi
+                            # Install app dependencies
+                            if [ -f requirements.txt ]; then
+                                pip install -r requirements.txt
+                            else
+                                echo "No requirements.txt found — installing Flask manually"
+                                pip install flask
+                            fi
 
-                    # Ensure pytest is available even if requirements.txt missing
-                    pip install pytest --upgrade
+                            # Install test dependencies
+                            if [ -f tests/requirements.txt ]; then
+                                pip install -r tests/requirements.txt
+                            fi
 
-                    echo "=== Running unit tests ==="
-                    mkdir -p reports
-                    PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
-                '''
+                            # Ensure pytest is available even if requirements.txt missing
+                            pip install pytest --upgrade
+
+                            echo "=== Running unit tests ==="
+                            mkdir -p reports
+                            PYTHONPATH=. pytest tests/unit -q --junitxml=reports/unit.xml
+                        '''
+                    }
+                }
             }
         }
 
