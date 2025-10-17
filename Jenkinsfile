@@ -22,12 +22,9 @@ pipeline {
                     echo "Running unit tests inside Docker image..."
                     sh """
                         docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
-                        mkdir -p reports
                         docker run --rm -v \$WORKSPACE:/app -w /app ${DOCKER_IMAGE}:test bash -c '
-                            pip install --upgrade pip setuptools wheel &&
-                            pip install -r requirements.txt &&
-                            if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi &&
-                            pytest tests/unit -q --junitxml=reports/unit.xml
+                            mkdir -p /app/reports &&
+                            pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml
                         '
                     """
                 }
@@ -62,14 +59,14 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "=== Waiting for app to be ready ==="
+                    echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
 
                     for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
                                 echo "App is ready after ${i} attempts"
@@ -86,17 +83,18 @@ pipeline {
                         error("App did not become ready in time.")
                     }
 
-                    echo "Running integration tests..."
+                    echo "Running integration tests inside Python container..."
                     sh """
                         docker run --rm \
                             --network ${NETWORK_NAME} \
                             -v \$WORKSPACE:/app -w /app \
                             python:3.10-slim bash -c '
+                                ls -la /app &&
                                 pip install --upgrade pip setuptools wheel &&
-                                pip install -r requirements.txt &&
-                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi &&
-                                mkdir -p reports &&
-                                pytest tests/integration -q --junitxml=reports/integration.xml
+                                pip install -r /app/requirements.txt &&
+                                if [ -f /app/tests/requirements.txt ]; then pip install -r /app/tests/requirements.txt; fi &&
+                                mkdir -p /app/reports &&
+                                PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
                             '
                     """
                 }
@@ -121,10 +119,8 @@ pipeline {
 
     post {
         always {
-            script {
-                echo "Archiving test reports..."
-                junit allowEmptyResults: true, testResults: 'reports/*.xml'
-            }
+            echo "Archiving test reports..."
+            junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
             echo "Pipeline failed! Check the logs above."
