@@ -16,25 +16,14 @@ pipeline {
             }
         }
 
-        stage('Clean Workspace') {
-            steps {
-                echo "Cleaning workspace..."
-                sh 'docker system prune -af || true'
-            }
-        }
-
-        stage('Install & Unit Tests') {
+        stage('Unit Tests (Inside Docker)') {
             steps {
                 script {
-                    echo "Installing dependencies and running unit tests..."
+                    echo "Running unit tests inside Docker image..."
                     sh '''
-                        apt-get update && apt-get install -y python3-venv || true
-                        python3 -m venv venv
-                        . venv/bin/activate
-                        pip install --upgrade pip setuptools wheel
-                        pip install -r requirements.txt
-                        if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
-                        pytest tests/unit -q --junitxml=reports/unit.xml
+                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                        docker run --rm -v $WORKSPACE:/app $DOCKER_IMAGE:test \
+                            bash -c "pytest tests/unit -q --junitxml=reports/unit.xml"
                     '''
                 }
             }
@@ -78,11 +67,11 @@ pipeline {
                             def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
-                                echo "App is ready after ${i} attempts"
+                                echo " App is ready after ${i} attempts"
                                 break
                             }
                         }
-                        echo "Waiting for app... (${i})"
+                        echo "⏳ Waiting for app... (${i})"
                         sleep 3
                     }
 
@@ -132,7 +121,7 @@ pipeline {
             }
         }
         failure {
-            echo " Pipeline failed! Check the logs above."
+            echo "Pipeline failed! Check logs above."
         }
         success {
             echo "Pipeline completed successfully!"
