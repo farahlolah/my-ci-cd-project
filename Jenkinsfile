@@ -20,16 +20,12 @@ pipeline {
             steps {
                 script {
                     echo "Running unit tests inside Docker image..."
-                    sh '''
-                        # Build the Docker image for testing
+                    sh """
                         docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
-                        
-                        # Run unit tests inside the Docker container
-                        docker run --rm \
-                            -v $WORKSPACE:/app -w /app \
-                            ${DOCKER_IMAGE}:test \
+                        mkdir -p reports
+                        docker run --rm -v \$WORKSPACE:/app -w /app ${DOCKER_IMAGE}:test \
                             bash -c "pytest tests/unit -q --junitxml=reports/unit.xml"
-                    '''
+                    """
                 }
             }
         }
@@ -38,11 +34,11 @@ pipeline {
             steps {
                 script {
                     echo "Building and pushing Docker image..."
-                    sh '''
-                        docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
-                        docker push $DOCKER_IMAGE:latest
-                    '''
+                    sh """
+                        docker build -t ${DOCKER_IMAGE}:latest -f Dockerfile .
+                        echo \$DOCKERHUB_CREDENTIALS_PSW | docker login -u \$DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        docker push ${DOCKER_IMAGE}:latest
+                    """
                 }
             }
         }
@@ -51,10 +47,10 @@ pipeline {
             steps {
                 script {
                     echo "Deploying to staging..."
-                    sh '''
+                    sh """
                         docker compose -f ${STAGING_COMPOSE} down || true
                         docker compose -f ${STAGING_COMPOSE} up -d --build
-                    '''
+                    """
                 }
             }
         }
@@ -87,18 +83,16 @@ pipeline {
                     }
 
                     echo "Running integration tests..."
-                    sh '''
+                    sh """
                         docker run --rm \
                             --network ${NETWORK_NAME} \
-                            -v $WORKSPACE:/app -w /app \
-                            python:3.10 bash -c "
-                                set -e
-                                pip install --upgrade pip setuptools wheel
-                                pip install -r requirements.txt
-                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
+                            -v \$WORKSPACE:/app -w /app \
+                            python:3.10 bash -c '
+                                pip install --upgrade pip setuptools wheel &&
+                                pip install -r requirements.txt &&
                                 PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                            "
-                    '''
+                            '
+                    """
                 }
             }
         }
@@ -110,10 +104,10 @@ pipeline {
             steps {
                 script {
                     echo "Deploying to production..."
-                    sh '''
+                    sh """
                         docker compose -f ${PROD_COMPOSE} down || true
                         docker compose -f ${PROD_COMPOSE} up -d --build
-                    '''
+                    """
                 }
             }
         }
