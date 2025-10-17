@@ -21,8 +21,14 @@ pipeline {
                 script {
                     echo "Running unit tests inside Docker image..."
                     sh '''
-                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm $DOCKER_IMAGE:test bash -c "pytest tests/unit -q --junitxml=reports/unit.xml"
+                        # Build the Docker image for testing
+                        docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
+                        
+                        # Run unit tests inside the Docker container
+                        docker run --rm \
+                            -v $WORKSPACE:/app -w /app \
+                            ${DOCKER_IMAGE}:test \
+                            bash -c "pytest tests/unit -q --junitxml=reports/unit.xml"
                     '''
                 }
             }
@@ -84,11 +90,12 @@ pipeline {
                     sh '''
                         docker run --rm \
                             --network ${NETWORK_NAME} \
-                            -v $WORKSPACE:/workspace -w /workspace \
+                            -v $WORKSPACE:/app -w /app \
                             python:3.10 bash -c "
-                                pip install --upgrade pip setuptools wheel &&
-                                pip install -r requirements.txt &&
-                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi &&
+                                set -e
+                                pip install --upgrade pip setuptools wheel
+                                pip install -r requirements.txt
+                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
                                 PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                             "
                     '''
