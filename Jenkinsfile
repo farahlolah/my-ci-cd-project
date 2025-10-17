@@ -10,6 +10,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout SCM') {
             steps {
                 checkout scm
@@ -21,10 +22,17 @@ pipeline {
                 script {
                     echo "Running unit tests inside Docker image..."
                     sh """
+                        # Build Docker image including tests
                         docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
+
+                        # Create a temporary container to run unit tests
+                        docker run --rm ${DOCKER_IMAGE}:test bash -c '
+                            mkdir -p reports &&
+                            pytest tests/unit -q --junitxml=reports/unit.xml
+                        '
+
+                        # Copy reports from container to Jenkins workspace
                         mkdir -p reports
-                        docker run --rm -v \$WORKSPACE:/app -w /app ${DOCKER_IMAGE}:test \
-                            bash -c "pytest tests/unit -q --junitxml=reports/unit.xml"
                     """
                 }
             }
@@ -36,7 +44,7 @@ pipeline {
                     echo "Building and pushing Docker image..."
                     sh """
                         docker build -t ${DOCKER_IMAGE}:latest -f Dockerfile .
-                        echo \$DOCKERHUB_CREDENTIALS_PSW | docker login -u \$DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
                         docker push ${DOCKER_IMAGE}:latest
                     """
                 }
@@ -82,16 +90,12 @@ pipeline {
                         error("App did not become ready in time.")
                     }
 
-                    echo "Running integration tests..."
+                    echo "Running integration tests inside Docker..."
                     sh """
-                        docker run --rm \
-                            --network ${NETWORK_NAME} \
-                            -v \$WORKSPACE:/app -w /app \
-                            python:3.10 bash -c '
-                                pip install --upgrade pip setuptools wheel &&
-                                pip install -r requirements.txt &&
-                                PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
-                            '
+                        docker run --rm --network ${NETWORK_NAME} ${DOCKER_IMAGE}:test bash -c '
+                            mkdir -p reports &&
+                            pytest tests/integration -q --junitxml=reports/integration.xml
+                        '
                     """
                 }
             }
