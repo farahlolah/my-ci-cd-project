@@ -6,6 +6,7 @@ pipeline {
         DOCKER_IMAGE = "farah16629/myapp"
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
+        NETWORK_NAME = "my-ci-cd-pipeline-net"
     }
 
     stages {
@@ -15,11 +16,19 @@ pipeline {
             }
         }
 
+        stage('Clean Workspace') {
+            steps {
+                echo "Cleaning workspace..."
+                sh 'docker system prune -af || true'
+            }
+        }
+
         stage('Install & Unit Tests') {
             steps {
                 script {
                     echo "Installing dependencies and running unit tests..."
                     sh '''
+                        apt-get update && apt-get install -y python3-venv || true
                         python3 -m venv venv
                         . venv/bin/activate
                         pip install --upgrade pip setuptools wheel
@@ -34,7 +43,7 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
-                    echo "🐳 Building and pushing Docker image..."
+                    echo "Building and pushing Docker image..."
                     sh '''
                         docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
                         echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
@@ -78,20 +87,20 @@ pipeline {
                     }
 
                     if (!ready) {
-                        echo " App failed to start. Showing logs..."
+                        echo "App failed to start. Showing logs..."
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
 
-                    echo "🧪 Running integration tests..."
+                    echo "Running integration tests..."
                     sh '''
                         docker run --rm \
-                            --network my-ci-cd-pipeline-net \
+                            --network ${NETWORK_NAME} \
                             -v $WORKSPACE:/workspace -w /workspace \
                             python:3.10 bash -c "
-                                pip install --upgrade pip setuptools wheel
-                                pip install -r requirements.txt
-                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
+                                pip install --upgrade pip setuptools wheel &&
+                                pip install -r requirements.txt &&
+                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi &&
                                 PYTHONPATH=. pytest tests/integration -q --junitxml=reports/integration.xml
                             "
                     '''
@@ -123,7 +132,7 @@ pipeline {
             }
         }
         failure {
-            echo "Pipeline failed! Check the logs above."
+            echo " Pipeline failed! Check the logs above."
         }
         success {
             echo "Pipeline completed successfully!"
