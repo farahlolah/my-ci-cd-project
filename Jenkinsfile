@@ -21,14 +21,9 @@ pipeline {
                 script {
                     echo "Running unit tests inside Docker image..."
                     sh """
-                        # Build Docker image for tests
-                        docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
-
-                        # Run unit tests using baked-in code and tests
-                        docker run --rm ${DOCKER_IMAGE}:test bash -c '
-                            mkdir -p /app/reports &&
-                            pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml
-                        '
+                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
             }
@@ -39,9 +34,9 @@ pipeline {
                 script {
                     echo "Building and pushing Docker image..."
                     sh """
-                        docker build -t ${DOCKER_IMAGE}:latest -f Dockerfile .
+                        docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
                         echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
-                        docker push ${DOCKER_IMAGE}:latest
+                        docker push $DOCKER_IMAGE:latest
                     """
                 }
             }
@@ -65,7 +60,7 @@ pipeline {
                     echo "=== Waiting for app to be ready ==="
                     def retries = 20
                     def ready = false
-        
+
                     for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
@@ -79,20 +74,17 @@ pipeline {
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
-        
+
                     if (!ready) {
                         echo "App failed to start. Showing logs..."
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
-        
+
                     echo "Running integration tests..."
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} -v \$WORKSPACE:/workspace -w /workspace python:3.10 bash -c "mkdir -p /workspace/reports && \
-                        pip install --upgrade pip setuptools wheel && \
-                        pip install -r /workspace/requirements.txt && \
-                        if [ -f /workspace/tests/requirements.txt ]; then pip install -r /workspace/tests/requirements.txt; fi && \
-                        PYTHONPATH=/workspace pytest /workspace/tests/integration -q --junitxml=/workspace/reports/integration.xml"
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
             }
