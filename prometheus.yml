@@ -1,5 +1,5 @@
 global:
-  scrape_interval: 5s   # How often to scrape targets by default
+  scrape_interval: 5s
   evaluation_interval: 5s
 
 scrape_configs:
@@ -8,6 +8,6 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   - job_name: 'app'
-    metrics_path: /metrics   # The endpoint your Python app exposes metrics on
+    metrics_path: /metrics
     static_configs:
-      - targets: ['my-ci-cd-pipeline_app_1:8080']
+      - targets: ['app:8080']
