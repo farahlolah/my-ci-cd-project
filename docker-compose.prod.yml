@@ -11,16 +11,15 @@ services:
     restart: always
 
   prometheus:
-    image: prom/prometheus:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.prometheus
     container_name: prometheus-prod
     ports:
       - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/config/prometheus.yml:ro
-    command:
-      - "--config.file=/etc/prometheus/config/prometheus.yml"
     depends_on:
       - app
+    restart: always
 
   grafana:
     image: grafana/grafana:latest
