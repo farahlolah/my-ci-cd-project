@@ -65,7 +65,7 @@ pipeline {
                     echo "=== Waiting for app to be ready ==="
                     def retries = 20
                     def ready = false
-
+        
                     for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
@@ -79,25 +79,20 @@ pipeline {
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
-
+        
                     if (!ready) {
                         echo "App failed to start. Showing logs..."
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
-
+        
                     echo "Running integration tests..."
                     sh """
-                        docker run --rm \
-                            --network ${NETWORK_NAME} \
-                            -v \$WORKSPACE:/workspace -w /workspace \
-                            python:3.10 bash -c '
-                                mkdir -p /workspace/reports &&
-                                pip install --upgrade pip setuptools wheel &&
-                                pip install -r requirements.txt &&
-                                if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi &&
-                                PYTHONPATH=. pytest tests/integration -q --junitxml=/workspace/reports/integration.xml
-                            '
+                        docker run --rm --network ${NETWORK_NAME} -v \$WORKSPACE:/workspace -w /workspace python:3.10 bash -c "mkdir -p /workspace/reports && \
+                        pip install --upgrade pip setuptools wheel && \
+                        pip install -r /workspace/requirements.txt && \
+                        if [ -f /workspace/tests/requirements.txt ]; then pip install -r /workspace/tests/requirements.txt; fi && \
+                        PYTHONPATH=/workspace pytest /workspace/tests/integration -q --junitxml=/workspace/reports/integration.xml"
                     """
                 }
             }
