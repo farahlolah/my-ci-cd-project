@@ -35,7 +35,7 @@ pipeline {
                     echo "Building and pushing Docker image..."
                     sh """
                         docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        echo $DOCKERHUB_CREDENTIALS | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
                         docker push $DOCKER_IMAGE:latest
                     """
                 }
