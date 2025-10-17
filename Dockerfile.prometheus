@@ -1,0 +1,8 @@
+# Dockerfile.prometheus
+FROM prom/prometheus:latest
+
+# Copy Prometheus config into image
+COPY prometheus.yml /etc/prometheus/prometheus.yml
+
+# Use this config file
+CMD ["--config.file=/etc/prometheus/prometheus.yml"]
