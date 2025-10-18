@@ -23,7 +23,7 @@ pipeline {
                     . venv/bin/activate
                     pip install --upgrade pip
                     pip install -r requirements.txt
-                    pip install pytest
+                    pip install pytest requests
                 '''
             }
         }
@@ -33,7 +33,7 @@ pipeline {
                 sh '''
                     mkdir -p ${REPORT_DIR}
                     . venv/bin/activate
-                    pytest tests/unit --junitxml=${REPORT_DIR}/unit.xml --maxfail=1 --disable-warnings -q
+                    pytest tests/unit --junitxml=${REPORT_DIR}/unit.xml
                 '''
             }
             post {
@@ -68,18 +68,16 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
+                    echo "🔍 Waiting for app to be ready..."
+
                     def retries = 20
                     def ready = false
                     for (i = 1; i <= retries; i++) {
-                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
-                        if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
-                            if (result) {
-                                ready = true
-                                echo "App is ready after ${i} attempts"
-                                break
-                            }
+                        def result = sh(script: "curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
+                        if (result) {
+                            ready = true
+                            echo "✅ App is ready after ${i} attempts"
+                            break
                         }
                         echo "Waiting for app... (${i})"
                         sleep 3
@@ -89,10 +87,11 @@ pipeline {
                         error("App did not become ready in time.")
                     }
 
+                    // Run integration tests with BASE_URL passed to pytest
                     sh '''
                         mkdir -p ${REPORT_DIR}
                         . venv/bin/activate
-                        pytest tests/integration --junitxml=${REPORT_DIR}/integration.xml --maxfail=1 --disable-warnings -q
+                        BASE_URL=http://localhost:8080 pytest tests/integration --junitxml=${REPORT_DIR}/integration.xml
                     '''
                 }
             }
@@ -118,13 +117,14 @@ pipeline {
 
     post {
         always {
+            echo "🧹 Cleaning up workspace..."
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo " Pipeline failed! Check the logs above."
+            echo "❌ Pipeline failed! Check the logs above."
         }
         success {
-            echo " Pipeline completed successfully!"
+            echo "✅ Pipeline completed successfully!"
         }
     }
 }
