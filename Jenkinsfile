@@ -30,6 +30,7 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
+                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
                             docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
@@ -55,13 +56,13 @@ pipeline {
                     echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-                    for (int i = 1; i <= retries; i++) {   // ✅ Fixed: declare i properly
+                    for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
-                                echo "App is ready after ${i} attempts ✅"
+                                echo "App is ready after ${i} attempts"
                                 break
                             }
                         }
@@ -99,10 +100,10 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "Pipeline failed! Check the logs above. ❌"
+            echo "Pipeline failed! Check the logs above."
         }
         success {
-            echo "Pipeline completed successfully! ✅"
+            echo "Pipeline completed successfully!"
         }
     }
 }
