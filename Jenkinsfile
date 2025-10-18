@@ -6,11 +6,10 @@ pipeline {
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
         NETWORK_NAME = "my-ci-cd-pipeline-net"
-        REPORT_DIR = "reports/junit"
+        REPORT_DIR = "reports"
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
                 checkout scm
@@ -31,17 +30,15 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
-                script {
-                    sh '''
-                        mkdir -p ${REPORT_DIR}
-                        . venv/bin/activate
-                        pytest tests/unit -q --junitxml=${REPORT_DIR}/unit.xml
-                    '''
-                }
+                sh '''
+                    mkdir -p ${REPORT_DIR}
+                    . venv/bin/activate
+                    pytest tests/unit --junitxml=${REPORT_DIR}/unit.xml
+                '''
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: 'reports/junit/unit.xml'
+                    junit 'reports/unit.xml'
                 }
             }
         }
@@ -93,13 +90,13 @@ pipeline {
                     sh '''
                         mkdir -p ${REPORT_DIR}
                         . venv/bin/activate
-                        pytest tests/integration -q --junitxml=${REPORT_DIR}/integration.xml
+                        pytest tests/integration --junitxml=${REPORT_DIR}/integration.xml
                     '''
                 }
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: 'reports/junit/integration.xml'
+                    junit 'reports/integration.xml'
                 }
             }
         }
@@ -119,14 +116,13 @@ pipeline {
 
     post {
         always {
-            echo " Archiving all test reports..."
-            junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
+            junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         success {
-            echo " Pipeline completed successfully!"
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo "Pipeline failed! Check logs above."
+            echo "❌ Pipeline failed! Check logs above."
         }
     }
 }
