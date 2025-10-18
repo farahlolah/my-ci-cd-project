@@ -6,14 +6,12 @@ pipeline {
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
         NETWORK_NAME = "my-ci-cd-pipeline-net"
-        REPORT_DIR = "reports"
     }
 
     stages {
         stage('Checkout SCM') {
             steps {
                 checkout scm
-                sh 'mkdir -p ${REPORT_DIR}'
             }
         }
 
@@ -22,17 +20,9 @@ pipeline {
                 script {
                     sh """
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --name test_unit --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
-                    // Copy test reports out of container to Jenkins workspace
-                    sh "docker cp test_unit:/app/reports/unit.xml ${REPORT_DIR}/unit.xml || true"
-                    sh "docker rm -f test_unit || true"
-                }
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: 'reports/unit.xml'
                 }
             }
         }
@@ -40,6 +30,7 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
+                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
                             docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
@@ -62,42 +53,31 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "🔍 Waiting for app to be ready..."
+                    echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-
-                    for (int i = 1; i <= retries; i++) {
+                    for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
-                                echo "✅ App is ready after ${i} attempts"
+                                echo "App is ready after ${i} attempts"
                                 break
                             }
                         }
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
-
                     if (!ready) {
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
 
-                    // Run integration tests in container
                     sh """
-                        docker run --name test_integration --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
-                    // Copy integration test report to Jenkins workspace
-                    sh "docker cp test_integration:/app/reports/integration.xml ${REPORT_DIR}/integration.xml || true"
-                    sh "docker rm -f test_integration || true"
-                }
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: 'reports/integration.xml'
                 }
             }
         }
@@ -117,14 +97,13 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up workspace..."
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "❌ Pipeline failed! Check the logs above."
+            echo "Pipeline failed! Check the logs above."
         }
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "Pipeline completed successfully!"
         }
     }
 }
