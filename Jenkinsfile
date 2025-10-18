@@ -2,115 +2,96 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "farah16629/myapp"
-        STAGING_COMPOSE = "docker-compose.staging.yml"
-        PROD_COMPOSE = "docker-compose.prod.yml"
-        NETWORK_NAME = "my-ci-cd-pipeline-net"
-        REPORT_DIR = "reports"
+        APP_NAME = "my-ci-cd-pipeline_app_1"
+        APP_PORT = "8080"
+        REPORT_FILE = "report.xml"
     }
 
     stages {
-        stage('Checkout SCM') {
+
+        stage('Checkout') {
             steps {
+                echo "📦 Checking out source code..."
                 checkout scm
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Build') {
             steps {
-                sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pip install pytest requests
-                '''
+                echo "🏗️ Building Docker images..."
+                sh 'docker compose -f docker-compose.yml build'
+            }
+        }
+
+        stage('Run App') {
+            steps {
+                echo "🚀 Starting application containers..."
+                sh 'docker compose -f docker-compose.yml up -d'
+            }
+        }
+
+        stage('Wait for App Readiness') {
+            steps {
+                script {
+                    echo "🔍 Waiting for app to be ready..."
+                    def retries = 20
+                    for (int i = 1; i <= retries; i++) {
+                        def result = sh(script: "curl -s http://${APP_NAME}:${APP_PORT}/metrics || true", returnStdout: true).trim()
+                        if (result.contains('http_requests_total')) {
+                            echo "✅ App is ready!"
+                            break
+                        } else {
+                            echo "Waiting for app... (${i})"
+                            sleep(time: 3, unit: 'SECONDS')
+                        }
+                        if (i == retries) {
+                            error("App did not become ready in time.")
+                        }
+                    }
+                }
             }
         }
 
         stage('Unit Tests') {
             steps {
+                echo "🧪 Running Unit Tests..."
                 sh '''
-                    mkdir -p ${REPORT_DIR}
-                    . venv/bin/activate
-                    pytest tests/unit --junitxml=${REPORT_DIR}/unit.xml
+                python3 -m venv venv
+                source venv/bin/activate
+                pip install --upgrade pip
+                pip install pytest requests junit-xml
+                pytest --junitxml=${REPORT_FILE} || true
                 '''
             }
             post {
                 always {
-                    junit 'reports/unit.xml'
+                    junit "${REPORT_FILE}"
                 }
-            }
-        }
-
-        stage('Docker Build & Push') {
-            steps {
-                script {
-                    withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
-                        sh """
-                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                            docker push $DOCKER_IMAGE:latest
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to Staging') {
-            steps {
-                sh """
-                    docker compose -f ${STAGING_COMPOSE} down || true
-                    docker compose -f ${STAGING_COMPOSE} up -d --build
-                """
             }
         }
 
         stage('Integration Tests') {
             steps {
-                script {
-                    echo "🔍 Waiting for app to be ready..."
-
-                    def retries = 20
-                    def ready = false
-                    for (i = 1; i <= retries; i++) {
-                        def result = sh(script: "curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
-                        if (result) {
-                            ready = true
-                            echo "✅ App is ready after ${i} attempts"
-                            break
-                        }
-                        echo "Waiting for app... (${i})"
-                        sleep 3
-                    }
-                    if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
-                        error("App did not become ready in time.")
-                    }
-
-                    // Run integration tests with BASE_URL passed to pytest
-                    sh '''
-                        mkdir -p ${REPORT_DIR}
-                        . venv/bin/activate
-                        BASE_URL=http://localhost:8080 pytest tests/integration --junitxml=${REPORT_DIR}/integration.xml
-                    '''
-                }
+                echo "🔬 Running Integration Tests..."
+                sh '''
+                source venv/bin/activate
+                pytest --junitxml=${REPORT_FILE} tests/test_integration.py || true
+                '''
             }
             post {
                 always {
-                    junit 'reports/integration.xml'
+                    junit "${REPORT_FILE}"
                 }
             }
         }
 
         stage('Deploy to Production') {
             when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                expression { currentBuild.currentResult == 'SUCCESS' }
             }
             steps {
-                sh """
-                    docker compose -f ${PROD_COMPOSE} down || true
-                    docker compose -f ${PROD_COMPOSE} up -d --build
-                """
+                echo "🚀 Deploying to production..."
+                sh 'docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up -d'
             }
         }
     }
@@ -118,13 +99,13 @@ pipeline {
     post {
         always {
             echo "🧹 Cleaning up workspace..."
-            junit allowEmptyResults: true, testResults: 'reports/*.xml'
-        }
-        failure {
-            echo "❌ Pipeline failed! Check the logs above."
+            junit allowEmptyResults: true, testResults: "${REPORT_FILE}"
         }
         success {
             echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed! Check the logs above."
         }
     }
 }
