@@ -6,26 +6,43 @@ pipeline {
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
         NETWORK_NAME = "my-ci-cd-pipeline-net"
+        REPORT_DIR = "reports/junit"
     }
 
     stages {
+
         stage('Checkout SCM') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Unit Tests (Inside Docker)') {
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                    pip install pytest pytest-junit
+                '''
+            }
+        }
+
+        stage('Unit Tests') {
             steps {
                 script {
-                    sh """
-                        mkdir -p reports
-                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -v "\$(pwd)/reports:/app/reports" -w /app $DOCKER_IMAGE:test \
-                            bash -c "pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
-                    """
+                    sh '''
+                        mkdir -p ${REPORT_DIR}
+                        . venv/bin/activate
+                        pytest tests/unit -q --junitxml=${REPORT_DIR}/unit.xml
+                    '''
                 }
-                junit allowEmptyResults: true, testResults: 'reports/unit.xml'
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/junit/unit.xml'
+                }
             }
         }
 
@@ -33,10 +50,10 @@ pipeline {
             steps {
                 script {
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
-                        sh """
-                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                            docker push $DOCKER_IMAGE:latest
-                        """
+                        sh '''
+                            docker build -t ${DOCKER_IMAGE}:latest -f Dockerfile .
+                            docker push ${DOCKER_IMAGE}:latest
+                        '''
                     }
                 }
             }
@@ -44,10 +61,10 @@ pipeline {
 
         stage('Deploy to Staging') {
             steps {
-                sh """
+                sh '''
                     docker compose -f ${STAGING_COMPOSE} down || true
                     docker compose -f ${STAGING_COMPOSE} up -d --build
-                """
+                '''
             }
         }
 
@@ -55,33 +72,35 @@ pipeline {
             steps {
                 script {
                     echo "Waiting for app to be ready..."
-                    def retries = 20
+                    def retries = 15
                     def ready = false
-                    for (i = 1; i <= retries; i++) {
-                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
-                        if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
-                            if (result) {
-                                ready = true
-                                echo "App is ready after ${i} attempts"
-                                break
-                            }
+
+                    for (int i = 1; i <= retries; i++) {
+                        def result = sh(script: "curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
+                        if (result) {
+                            ready = true
+                            echo "✅ App is ready after ${i} attempts"
+                            break
                         }
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
+
                     if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
-                        error("App did not become ready in time.")
+                        error("❌ App did not become ready in time.")
                     }
 
-                    sh """
-                        mkdir -p reports
-                        docker run --rm --network ${NETWORK_NAME} -v "\$(pwd)/reports:/app/reports" $DOCKER_IMAGE:test \
-                            bash -c "pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
-                    """
+                    sh '''
+                        mkdir -p ${REPORT_DIR}
+                        . venv/bin/activate
+                        pytest tests/integration -q --junitxml=${REPORT_DIR}/integration.xml
+                    '''
                 }
-                junit allowEmptyResults: true, testResults: 'reports/integration.xml'
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/junit/integration.xml'
+                }
             }
         }
 
@@ -90,23 +109,24 @@ pipeline {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
             steps {
-                sh """
+                sh '''
                     docker compose -f ${PROD_COMPOSE} down || true
                     docker compose -f ${PROD_COMPOSE} up -d --build
-                """
+                '''
             }
         }
     }
 
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'reports/*.xml'
-        }
-        failure {
-            echo "Pipeline failed! Check the logs above."
+            echo " Archiving all test reports..."
+            junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
         }
         success {
-            echo "Pipeline completed successfully!"
+            echo " Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed! Check logs above."
         }
     }
 }
