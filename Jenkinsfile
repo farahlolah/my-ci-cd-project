@@ -19,11 +19,13 @@ pipeline {
             steps {
                 script {
                     sh """
+                        mkdir -p reports
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -w /app -v \$PWD/reports:/app/reports $DOCKER_IMAGE:test bash -c "pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
+                        docker run --rm -v \$(pwd)/reports:/app/reports -w /app $DOCKER_IMAGE:test \
+                            bash -c "pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
-                //  Collect results for this stage only
+                // Publish test results to Jenkins
                 junit allowEmptyResults: true, testResults: 'reports/unit.xml'
             }
         }
@@ -53,9 +55,10 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
+                    echo "Waiting for staging app to be ready..."
                     def retries = 20
                     def ready = false
+
                     for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
@@ -69,16 +72,19 @@ pipeline {
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
+
                     if (!ready) {
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
 
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} -v \$PWD/reports:/app/reports $DOCKER_IMAGE:test bash -c "PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                        mkdir -p reports
+                        docker run --rm --network ${NETWORK_NAME} -v \$(pwd)/reports:/app/reports $DOCKER_IMAGE:test \
+                            bash -c "pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
-                // Collect results for this stage only
+                // Publish integration test results
                 junit allowEmptyResults: true, testResults: 'reports/integration.xml'
             }
         }
@@ -97,11 +103,15 @@ pipeline {
     }
 
     post {
+        always {
+            // Collect both reports for Jenkins test visualization
+            junit allowEmptyResults: true, testResults: 'reports/*.xml'
+        }
         failure {
-            echo "Pipeline failed! Check the logs above."
+            echo " Pipeline failed! Check logs above."
         }
         success {
-            echo "Pipeline completed successfully!"
+            echo " Pipeline completed successfully!"
         }
     }
 }
