@@ -16,17 +16,17 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pip install pytest pytest-junit
-                '''
-            }
+    stage('Install Dependencies') {
+        steps {
+            sh '''
+                python3 -m venv venv
+                . venv/bin/activate
+                pip install --upgrade pip
+                pip install -r requirements.txt
+                pip install pytest
+            '''
         }
+    }
 
         stage('Unit Tests') {
             steps {
