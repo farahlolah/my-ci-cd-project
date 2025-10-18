@@ -6,9 +6,11 @@ pipeline {
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
         NETWORK_NAME = "my-ci-cd-pipeline-net"
+        REPORTS_DIR = "reports"
     }
 
     stages {
+
         stage('Checkout SCM') {
             steps {
                 checkout scm
@@ -19,14 +21,14 @@ pipeline {
             steps {
                 script {
                     sh """
-                        mkdir -p reports
+                        mkdir -p ${REPORTS_DIR}
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -v \$(pwd)/reports:/app/reports -w /app $DOCKER_IMAGE:test \
+                        docker run --rm -v "\$(pwd)/${REPORTS_DIR}:/app/reports" -w /app $DOCKER_IMAGE:test \
                             bash -c "pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
-                // Publish test results to Jenkins
-                junit allowEmptyResults: true, testResults: 'reports/unit.xml'
+                // publish test results for this stage
+                junit allowEmptyResults: true, testResults: "${REPORTS_DIR}/unit.xml"
             }
         }
 
@@ -55,10 +57,9 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for staging app to be ready..."
+                    echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-
                     for (i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
@@ -72,20 +73,18 @@ pipeline {
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
-
                     if (!ready) {
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
 
                     sh """
-                        mkdir -p reports
-                        docker run --rm --network ${NETWORK_NAME} -v \$(pwd)/reports:/app/reports $DOCKER_IMAGE:test \
+                        docker run --rm --network ${NETWORK_NAME} -v "\$(pwd)/${REPORTS_DIR}:/app/reports" $DOCKER_IMAGE:test \
                             bash -c "pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
-                // Publish integration test results
-                junit allowEmptyResults: true, testResults: 'reports/integration.xml'
+                // publish integration test results
+                junit allowEmptyResults: true, testResults: "${REPORTS_DIR}/integration.xml"
             }
         }
 
@@ -104,7 +103,7 @@ pipeline {
 
     post {
         always {
-            // Collect both reports for Jenkins test visualization
+            echo "Publishing test results..."
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
