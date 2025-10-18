@@ -20,17 +20,17 @@ pipeline {
                 script {
                     sh """
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
+                        docker run --rm -w /app -v \$PWD/reports:/app/reports $DOCKER_IMAGE:test bash -c "pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
+                //  Collect results for this stage only
+                junit allowEmptyResults: true, testResults: 'reports/unit.xml'
             }
         }
 
         stage('Docker Build & Push') {
             steps {
                 script {
-                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
                             docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
@@ -75,10 +75,11 @@ pipeline {
                     }
 
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                        docker run --rm --network ${NETWORK_NAME} -v \$PWD/reports:/app/reports $DOCKER_IMAGE:test bash -c "PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
+                // Collect results for this stage only
+                junit allowEmptyResults: true, testResults: 'reports/integration.xml'
             }
         }
 
@@ -96,9 +97,6 @@ pipeline {
     }
 
     post {
-        always {
-            junit allowEmptyResults: true, testResults: 'reports/*.xml'
-        }
         failure {
             echo "Pipeline failed! Check the logs above."
         }
