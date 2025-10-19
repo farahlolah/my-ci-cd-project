@@ -56,10 +56,11 @@ pipeline {
                     echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-                    for (i = 1; i <= retries; i++) {
+                    for (def i = 1; i <= retries; i++) { // <-- use def i
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
+                            // Use the correct port 8080
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
                                 echo "App is ready after ${i} attempts"
@@ -73,7 +74,7 @@ pipeline {
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
-
+        
                     sh """
                         docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
