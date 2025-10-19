@@ -5,6 +5,7 @@ pipeline {
         DOCKER_IMAGE = "farah16629/myapp"
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
+        DOCKER_NETWORK = "my-ci-cd-pipeline-net"
     }
 
     stages {
@@ -49,22 +50,10 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "🔍 Detecting docker network..."
-                    def networkName = sh(
-                        script: "docker network ls --format '{{.Name}}' | grep _default || true",
-                        returnStdout: true
-                    ).trim()
-                    if (!networkName) {
-                        error("❌ Could not detect Docker network. Make sure docker-compose up ran successfully.")
-                    }
-
-                    echo "✅ Using network: ${networkName}"
-
-                    // Wait for app to respond
                     echo "⏳ Waiting for app:8080/metrics to be ready..."
                     sh """
                         for i in {1..10}; do
-                            if docker run --rm --network ${networkName} curlimages/curl:8.4.0 -fs http://app:8080/metrics > /dev/null; then
+                            if docker run --rm --network ${DOCKER_NETWORK} curlimages/curl:8.4.0 -fs http://app:8080/metrics > /dev/null; then
                                 echo '✅ App is ready!';
                                 break;
                             fi;
@@ -73,12 +62,15 @@ pipeline {
                         done
                     """
 
-                    // Run integration tests inside same network
+                    echo "🚀 Running integration tests..."
                     sh """
-                        docker run --rm --network ${networkName} $DOCKER_IMAGE:test bash -c "
-                            mkdir -p /app/reports && \
-                            PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
-                        "
+                        docker run --rm \
+                            --network ${DOCKER_NETWORK} \
+                            -v \$(pwd)/reports:/app/reports \
+                            $DOCKER_IMAGE:test bash -c "
+                                mkdir -p /app/reports && \
+                                PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
+                            "
                     """
                 }
             }
