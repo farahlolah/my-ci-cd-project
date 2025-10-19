@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   app:
-    image: farah16629/myapp:latest
+    image: farah16629/myapp:staging
     container_name: my-ci-cd-pipeline_app_1
     ports:
       - "8081:8080"
