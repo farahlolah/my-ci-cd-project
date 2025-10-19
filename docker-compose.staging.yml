@@ -2,10 +2,10 @@ version: "3.8"
 
 services:
   app:
-    image: farah16629/myapp:staging
+    image: farah16629/myapp:latest
     container_name: my-ci-cd-pipeline_app_1
     ports:
-      - "8081:8080"
+      - "8080:8080"
     restart: always
     networks:
       - my-ci-cd-pipeline-net
