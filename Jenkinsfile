@@ -66,7 +66,6 @@ pipeline {
                 script {
                     echo '📊 Collecting and publishing test results...'
 
-                    // Check if the reports directory exists before collecting
                     if (fileExists("${REPORTS_DIR}/unit.xml") || fileExists("${REPORTS_DIR}/integration.xml")) {
                         junit allowEmptyResults: true, testResults: "${REPORTS_DIR}/*.xml"
                     } else {
@@ -86,10 +85,6 @@ pipeline {
         }
         failure {
             echo '❌ Build failed. Please check the Jenkins logs.'
-        }
-        always {
-            echo '🧹 Cleaning up temporary files...'
-            sh 'docker system prune -f || true'
         }
     }
 }
