@@ -48,7 +48,7 @@ pipeline {
                 sh """
                 echo "Waiting for staging app..."
                 for i in \$(seq 1 20); do
-                    curl -s http://app_staging:${APP_PORT}/metrics && break
+                    curl -s http://localhost:8081/metrics && break
                     echo "Still waiting..." && sleep 3
                 done
                 """
