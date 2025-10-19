@@ -5,7 +5,6 @@ pipeline {
         DOCKER_IMAGE = "farah16629/myapp"
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
-        NETWORK_NAME = "my-ci-cd-pipeline-net"
     }
 
     stages {
@@ -53,30 +52,27 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
-                    def retries = 20
-                    def ready = false
-                    for (i = 1; i <= retries; i++) {
-                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
-                        if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
-                            if (result) {
-                                ready = true
-                                echo "App is ready after ${i} attempts"
-                                break
-                            }
-                        }
-                        echo "Waiting for app... (${i})"
-                        sleep 3
-                    }
-                    if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
-                        error("App did not become ready in time.")
+                    echo "🔍 Waiting for app to be ready..."
+                    sh "sleep 5"
+
+                    // Detect actual network created by docker-compose (e.g., thesis_default)
+                    def networkName = sh(
+                        script: "docker network ls --format '{{.Name}}' | grep thesis_default || true",
+                        returnStdout: true
+                    ).trim()
+
+                    if (!networkName) {
+                        error("❌ Could not find docker network (thesis_default). Check docker-compose output.")
                     }
 
+                    echo "✅ Using network: ${networkName}"
+
+                    // Run integration tests inside the same network as app
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                        docker run --rm --network ${networkName} $DOCKER_IMAGE:test bash -c "
+                            mkdir -p /app/reports && \
+                            PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
+                        "
                     """
                 }
             }
@@ -100,10 +96,10 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "Pipeline failed! Check the logs above."
+            echo "❌ Pipeline failed! Check the logs above."
         }
         success {
-            echo "Pipeline completed successfully!"
+            echo "🎉 Pipeline completed successfully!"
         }
     }
 }
