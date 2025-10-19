@@ -30,7 +30,6 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
-                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
                             docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
@@ -58,7 +57,7 @@ pipeline {
                         docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c '
                             echo "Waiting for app...";
                             for i in \$(seq 1 20); do
-                                curl -s http://app:8081/metrics && break || { echo "Waiting..." && sleep 3; }
+                                curl -s http://app:8080/metrics && break || { echo "Waiting..." && sleep 3; }
                             done;
                             PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
                         '
@@ -82,7 +81,7 @@ pipeline {
 
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'reports/*.xml'
+            junit allowEmptyResults: true, testResults: 'reports/*.xml', healthScaleFactor: 0.0
         }
         failure {
             echo "Pipeline failed! Check the logs above."
