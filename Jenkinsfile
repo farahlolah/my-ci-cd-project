@@ -5,7 +5,7 @@ pipeline {
         DOCKER_IMAGE = "farah16629/myapp"
         STAGING_COMPOSE = "docker-compose.staging.yml"
         PROD_COMPOSE = "docker-compose.prod.yml"
-        DOCKER_NETWORK = "my-ci-cd-pipeline-net"
+        NETWORK_NAME = "my-ci-cd-pipeline-net"
     }
 
     stages {
@@ -15,25 +15,28 @@ pipeline {
             }
         }
 
-        stage('Unit Tests') {
+        stage('Unit Tests (Inside Docker)') {
             steps {
-                sh """
-                    docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                    docker run --rm -w /app $DOCKER_IMAGE:test bash -c "
-                        mkdir -p /app/reports && \
-                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml
-                    "
-                """
+                script {
+                    sh """
+                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
+                    """
+                }
             }
         }
 
         stage('Docker Build & Push') {
             steps {
-                withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
-                    sh """
-                        docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                        docker push $DOCKER_IMAGE:latest
-                    """
+                script {
+                    // Secure Docker login with credentials stored in Jenkins
+                    withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
+                        sh """
+                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
+                            docker push $DOCKER_IMAGE:latest
+                        """
+                    }
                 }
             }
         }
@@ -50,29 +53,30 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "⏳ Waiting for app:8080/metrics to be ready..."
-                    sh """
-                        for i in {1..10}; do
-                            echo "Attempt \$i: checking app..."
-                            if docker run --rm --network ${DOCKER_NETWORK} curlimages/curl:8.4.0 -fs http://app:8080/metrics > /dev/null; then
-                                echo "✅ App is ready!"
-                                exit 0
-                            fi
-                            sleep 3
-                        done
-                        echo "❌ App did not become ready after 10 attempts."
-                        exit 1
-                    """
+                    echo "Waiting for app to be ready..."
+                    def retries = 20
+                    def ready = false
+                    for (i = 1; i <= retries; i++) {
+                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
+                        if (appId) {
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
+                            if (result) {
+                                ready = true
+                                echo "App is ready after ${i} attempts"
+                                break
+                            }
+                        }
+                        echo "Waiting for app... (${i})"
+                        sleep 3
+                    }
+                    if (!ready) {
+                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
+                        error("App did not become ready in time.")
+                    }
 
-                    echo "🚀 Running integration tests..."
                     sh """
-                        docker run --rm \
-                            --network ${DOCKER_NETWORK} \
-                            -v \$(pwd)/reports:/app/reports \
-                            $DOCKER_IMAGE:test bash -c "
-                                mkdir -p /app/reports && \
-                                PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
-                            "
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
             }
@@ -96,10 +100,10 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "❌ Pipeline failed — check logs above."
+            echo "Pipeline failed! Check the logs above."
         }
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "Pipeline completed successfully!"
         }
     }
 }
