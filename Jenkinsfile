@@ -30,7 +30,6 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
-                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
                             docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
@@ -74,7 +73,6 @@ pipeline {
                         error("App did not become ready in time.")
                     }
 
-                    // Run integration tests
                     sh """
                         docker run --rm --network ${NETWORK_NAME} -v ${WORKSPACE}/reports:/app/reports $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
@@ -98,7 +96,7 @@ pipeline {
 
     post {
         always {
-            // Publish JUnit reports and do not fail pipeline if tests fail
+            // Publish JUnit reports; pipeline won't fail even if tests fail
             junit allowEmptyResults: true, testResults: 'reports/*.xml', skipMarkingBuildUnstable: true
         }
         failure {
