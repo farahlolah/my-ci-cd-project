@@ -58,17 +58,12 @@ pipeline {
                     def ready = false
         
                     for (def i = 1; i <= retries; i++) {
-                        // Run a small Python snippet in the test container to check the /metrics endpoint
+                        // Use single-line Python in Docker to check /metrics endpoint
                         def result = sh(
                             script: """
-                            docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test python3 -c '
-        import requests, sys
-        try:
-            r = requests.get("http://app:8081/metrics", timeout=3)
-            sys.exit(0 if r.status_code == 200 else 1)
-        except:
-            sys.exit(1)
-        '
+                            docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test python3 -c "import requests, sys; \
+        try: r = requests.get('http://app:8081/metrics', timeout=3); sys.exit(0 if r.status_code == 200 else 1) \
+        except: sys.exit(1)"
                             """,
                             returnStatus: true
                         )
