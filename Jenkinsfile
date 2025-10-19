@@ -53,34 +53,13 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
-                    def retries = 20
-                    def ready = false
-        
-                    for (i = 1; i <= retries; i++) {
-                        // Check if app responds via curl from the host container
-                        def result = sh(
-                            script: "docker exec my-ci-cd-pipeline_app_1 curl -s http://0.0.0.0:8081/metrics || true",
-                            returnStdout: true
-                        ).trim()
-        
-                        if (result) {
-                            ready = true
-                            echo "App is ready after ${i} attempts"
-                            break
-                        }
-                        echo "Waiting for app... (${i})"
-                        sleep 3
-                    }
-        
-                    if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
-                        error("App did not become ready in time.")
-                    }
-        
                     echo "Running integration tests..."
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c " \
+                        echo 'Waiting for app...'; \
+                        for i in \$(seq 1 20); do \
+                            curl -s http://app:8081/metrics && break || echo 'Waiting...' && sleep 3; \
+                        done; \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
