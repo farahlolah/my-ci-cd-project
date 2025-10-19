@@ -9,7 +9,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
                 checkout scm
@@ -20,8 +19,8 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker build -t ${DOCKER_IMAGE}:test -f Dockerfile .
-                        docker run --rm -w /app ${DOCKER_IMAGE}:test bash -c "mkdir -p /app/reports && \
+                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
@@ -31,12 +30,11 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
+                    // Secure Docker login with credentials stored in Jenkins
                     withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
                         sh """
-                            docker build -t ${DOCKER_IMAGE}:latest -f Dockerfile .
-                            docker tag ${DOCKER_IMAGE}:latest ${DOCKER_IMAGE}:staging
-                            docker push ${DOCKER_IMAGE}:latest
-                            docker push ${DOCKER_IMAGE}:staging
+                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
+                            docker push $DOCKER_IMAGE:latest
                         """
                     }
                 }
@@ -55,26 +53,29 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "⏳ Waiting for app to be ready..."
+                    echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
                     for (i = 1; i <= retries; i++) {
-                        def result = sh(script: "docker run --rm --network ${NETWORK_NAME} curlimages/curl:latest curl -s http://app:8080/metrics || true", returnStdout: true).trim()
-                        if (result) {
-                            ready = true
-                            echo "✅ App is ready after ${i} attempts"
-                            break
+                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
+                        if (appId) {
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
+                            if (result) {
+                                ready = true
+                                echo "App is ready after ${i} attempts"
+                                break
+                            }
                         }
                         echo "Waiting for app... (${i})"
                         sleep 3
                     }
                     if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=app || true)"
+                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
 
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} ${DOCKER_IMAGE}:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
@@ -99,10 +100,10 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "❌ Pipeline failed! Check the logs above."
+            echo "Pipeline failed! Check the logs above."
         }
         success {
-            echo "🎉 Pipeline completed successfully!"
+            echo "Pipeline completed successfully!"
         }
     }
 }
