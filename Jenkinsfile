@@ -81,7 +81,7 @@ pipeline {
 
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'reports/*.xml', healthScaleFactor: 0.0
+            junit allowEmptyResults: true, testResults: 'reports/*.xml', healthScaleFactor: 0.0, skipPublishingChecks: true
         }
         failure {
             echo "Pipeline failed! Check the logs above."
