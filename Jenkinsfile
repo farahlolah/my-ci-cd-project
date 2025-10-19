@@ -20,8 +20,7 @@ pipeline {
                 script {
                     sh """
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -v ${WORKSPACE}/reports:/app/reports -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
+                        docker run --rm -v ${WORKSPACE}/reports:/app/reports -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && pytest /app/tests/unit -v --junitxml=/app/reports/unit.xml"
                     """
                 }
             }
@@ -73,9 +72,9 @@ pipeline {
                         error("App did not become ready in time.")
                     }
 
+                    // Run integration tests with verbose output and JUnit report
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} -v ${WORKSPACE}/reports:/app/reports $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                        docker run --rm --network ${NETWORK_NAME} -v ${WORKSPACE}/reports:/app/reports $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && PYTHONPATH=/app pytest /app/tests/integration -v --junitxml=/app/reports/integration.xml"
                     """
                 }
             }
@@ -96,7 +95,7 @@ pipeline {
 
     post {
         always {
-            // Publish JUnit reports; pipeline won't fail even if tests fail
+            // Publish JUnit reports; build won't fail even if tests fail
             junit allowEmptyResults: true, testResults: 'reports/*.xml', skipMarkingBuildUnstable: true
         }
         failure {
