@@ -99,7 +99,7 @@ pipeline {
     post {
         always {
             // Publish JUnit reports and do not fail pipeline if tests fail
-            junit allowEmptyResults: true, testResults: 'reports/*.xml', skipMarkingBuildAsFailure: true
+            junit allowEmptyResults: true, testResults: 'reports/*.xml', skipMarkingBuildUnstable: true
         }
         failure {
             echo "Pipeline failed! Check the logs above."
