@@ -53,24 +53,29 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
+                    echo "Waiting for app service to be ready..."
                     def retries = 20
                     def ready = false
+
                     for (i = 1; i <= retries; i++) {
-                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
-                        if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
-                            if (result) {
-                                ready = true
-                                echo "App is ready after ${i} attempts"
-                                break
-                            }
+                        def result = sh(
+                            script: "docker run --rm --network ${NETWORK_NAME} curlimages/curl:latest curl -s http://app:8080/metrics || true",
+                            returnStdout: true
+                        ).trim()
+
+                        if (result) {
+                            ready = true
+                            echo "✅ App is ready after ${i} attempts"
+                            break
                         }
-                        echo "Waiting for app... (${i})"
+
+                        echo "⏳ Waiting for app... (${i})"
                         sleep 3
                     }
+
                     if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
+                        echo "❌ App did not become ready in time — printing logs..."
+                        sh "docker compose -f ${STAGING_COMPOSE} logs app || true"
                         error("App did not become ready in time.")
                     }
 
@@ -100,10 +105,10 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
         failure {
-            echo "Pipeline failed! Check the logs above."
+            echo " Pipeline failed! Check logs above."
         }
         success {
-            echo "Pipeline completed successfully!"
+            echo " Pipeline completed successfully!"
         }
     }
 }
