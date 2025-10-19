@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        STAGING_IMAGE = "farah16629/myapp:staging"
-        PROD_IMAGE = "farah16629/myapp:prod"
+        DOCKER_IMAGE = "farah16629/myapp"
+        STAGING_COMPOSE = "docker-compose.staging.yml"
+        PROD_COMPOSE = "docker-compose.prod.yml"
         NETWORK_NAME = "my-ci-cd-pipeline-net"
-        APP_PORT = "8080"
     }
 
     stages {
@@ -15,72 +15,81 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Unit Tests (Inside Docker)') {
+            steps {
+                script {
+                    sh """
+                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
+                    """
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    // Secure Docker login with credentials stored in Jenkins
+                    withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
+                        sh """
+                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
+                            docker push $DOCKER_IMAGE:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
             steps {
                 sh """
-                docker build -t ${STAGING_IMAGE} .
-                docker build -t ${PROD_IMAGE} .
+                    docker compose -f ${STAGING_COMPOSE} down || true
+                    docker compose -f ${STAGING_COMPOSE} up -d --build
                 """
             }
         }
 
-        stage('Create Docker Network') {
+        stage('Integration Tests') {
             steps {
-                sh """
-                if ! docker network ls | grep -w ${NETWORK_NAME}; then
-                    docker network create ${NETWORK_NAME}
-                fi
-                """
+                script {
+                    echo "Waiting for app to be ready..."
+                    def retries = 20
+                    def ready = false
+                    for (i = 1; i <= retries; i++) {
+                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
+                        if (appId) {
+                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
+                            if (result) {
+                                ready = true
+                                echo "App is ready after ${i} attempts"
+                                break
+                            }
+                        }
+                        echo "Waiting for app... (${i})"
+                        sleep 3
+                    }
+                    if (!ready) {
+                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
+                        error("App did not become ready in time.")
+                    }
+
+                    sh """
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                    """
+                }
             }
         }
 
-        stage('Deploy Staging') {
-            steps {
-                sh """
-                docker rm -f app_staging || true
-                docker run -d --name app_staging --network ${NETWORK_NAME} -p 8081:${APP_PORT} ${STAGING_IMAGE}
-                """
-            }
-        }
-
-        stage('Wait for Staging App') {
-            steps {
-                sh """
-                echo "Waiting for staging app..."
-                for i in \$(seq 1 20); do
-                    curl -s http://localhost:8081/metrics && break
-                    echo "Still waiting..." && sleep 3
-                done
-                """
-            }
-        }
-
-        stage('Run Integration Tests on Staging') {
-            steps {
-                sh """
-                docker run --rm --network ${NETWORK_NAME} -v \$(pwd)/tests:/app/tests -v \$(pwd)/reports:/app/reports ${STAGING_IMAGE} \
-                bash -c "PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
-                """
-            }
-        }
-
-        stage('Run Unit Tests') {
-            steps {
-                sh """
-                docker run --rm -v \$(pwd)/tests:/app/tests -v \$(pwd)/reports:/app/reports ${STAGING_IMAGE} \
-                bash -c "PYTHONPATH=/app pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
-                """
-            }
-        }
-
-        stage('Deploy Production') {
+        stage('Deploy to Production') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
             steps {
                 sh """
-                docker rm -f app_prod || true
-                docker run -d --name app_prod --network ${NETWORK_NAME} -p 8082:${APP_PORT} ${PROD_IMAGE}
+                    docker compose -f ${PROD_COMPOSE} down || true
+                    docker compose -f ${PROD_COMPOSE} up -d --build
                 """
             }
         }
@@ -88,26 +97,13 @@ pipeline {
 
     post {
         always {
-            // Publish test reports
-            junit 'reports/*.xml'
-
-            // Clean up staging container only (keep prod running)
-            sh """
-            docker rm -f app_staging || true
-            docker network rm ${NETWORK_NAME} || true
-            """
+            junit allowEmptyResults: true, testResults: 'reports/*.xml'
         }
-
-        success {
-            echo "Pipeline finished successfully!"
-        }
-
-        unstable {
-            echo "Pipeline finished but some tests failed."
-        }
-
         failure {
-            echo "Pipeline failed!"
+            echo "Pipeline failed! Check the logs above."
+        }
+        success {
+            echo "Pipeline completed successfully!"
         }
     }
 }
