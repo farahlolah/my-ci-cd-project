@@ -53,18 +53,27 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Waiting for app to be ready..."
+                    echo "⏳ Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
         
                     for (def i = 1; i <= retries; i++) {
-                        // Use service name (from compose) to curl directly inside network
+                        // Run a small Python snippet in the test container to check the /metrics endpoint
                         def result = sh(
-                            script: "docker run --rm --network ${NETWORK_NAME} curlimages/curl:latest curl -s http://app:8081/metrics || true",
-                            returnStdout: true
-                        ).trim()
+                            script: """
+                            docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test python3 -c '
+        import requests, sys
+        try:
+            r = requests.get("http://app:8081/metrics", timeout=3)
+            sys.exit(0 if r.status_code == 200 else 1)
+        except:
+            sys.exit(1)
+        '
+                            """,
+                            returnStatus: true
+                        )
         
-                        if (result) {
+                        if (result == 0) {
                             ready = true
                             echo "✅ App is ready after ${i} attempts"
                             break
@@ -80,7 +89,7 @@ pipeline {
                         error("App did not become ready in time.")
                     }
         
-                    // Run integration tests inside the same Docker network
+                    echo "🚀 Running integration tests..."
                     sh """
                         docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
