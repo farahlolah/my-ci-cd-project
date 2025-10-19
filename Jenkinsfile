@@ -56,24 +56,31 @@ pipeline {
                     echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-                    for (i = 1; i <= retries; i++) {
-                        def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
-                        if (appId) {
-                            def result = sh(script: "docker exec ${appId} curl -s http://localhost:8081/metrics || true", returnStdout: true).trim()
-                            if (result) {
-                                ready = true
-                                echo "App is ready after ${i} attempts"
-                                break
-                            }
+        
+                    for (def i = 1; i <= retries; i++) {
+                        // Use service name (from compose) to curl directly inside network
+                        def result = sh(
+                            script: "docker run --rm --network ${NETWORK_NAME} curlimages/curl:latest curl -s http://app:8081/metrics || true",
+                            returnStdout: true
+                        ).trim()
+        
+                        if (result) {
+                            ready = true
+                            echo "✅ App is ready after ${i} attempts"
+                            break
                         }
-                        echo "Waiting for app... (${i})"
+        
+                        echo "⏳ Waiting for app... (${i})"
                         sleep 3
                     }
+        
                     if (!ready) {
-                        sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
+                        echo "❌ App did not become ready in time — printing logs..."
+                        sh "docker compose -f ${STAGING_COMPOSE} logs app || true"
                         error("App did not become ready in time.")
                     }
-
+        
+                    // Run integration tests inside the same Docker network
                     sh """
                         docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
