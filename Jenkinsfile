@@ -55,12 +55,13 @@ pipeline {
                 script {
                     echo "Running integration tests..."
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c " \
-                        echo 'Waiting for app...'; \
-                        for i in \$(seq 1 20); do \
-                            curl -s http://app:8081/metrics && break || echo 'Waiting...' && sleep 3; \
-                        done; \
-                        PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
+                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c '
+                            echo "Waiting for app...";
+                            for i in \$(seq 1 20); do
+                                curl -s http://app:8081/metrics && break || { echo "Waiting..." && sleep 3; }
+                            done;
+                            PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml
+                        '
                     """
                 }
             }
