@@ -52,7 +52,6 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "Running integration tests..."
                     sh """
                         docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c '
                             echo "Waiting for app...";
