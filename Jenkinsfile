@@ -14,28 +14,25 @@ pipeline {
             }
         }
 
-        stage('Unit Tests (Inside Docker)') {
+        stage('Unit Tests') {
             steps {
-                script {
-                    sh """
-                        docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
-                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
-                    """
-                }
+                sh """
+                    docker build -t $DOCKER_IMAGE:test -f Dockerfile .
+                    docker run --rm -w /app $DOCKER_IMAGE:test bash -c "
+                        mkdir -p /app/reports && \
+                        pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml
+                    "
+                """
             }
         }
 
         stage('Docker Build & Push') {
             steps {
-                script {
-                    // Secure Docker login with credentials stored in Jenkins
-                    withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
-                        sh """
-                            docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
-                            docker push $DOCKER_IMAGE:latest
-                        """
-                    }
+                withDockerRegistry([credentialsId: 'dockerhub-credentials', url: 'https://index.docker.io/v1/']) {
+                    sh """
+                        docker build -t $DOCKER_IMAGE:latest -f Dockerfile .
+                        docker push $DOCKER_IMAGE:latest
+                    """
                 }
             }
         }
@@ -52,22 +49,31 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "🔍 Waiting for app to be ready..."
-                    sh "sleep 5"
-
-                    // Detect actual network created by docker-compose (e.g., thesis_default)
+                    echo "🔍 Detecting docker network..."
                     def networkName = sh(
-                        script: "docker network ls --format '{{.Name}}' | grep thesis_default || true",
+                        script: "docker network ls --format '{{.Name}}' | grep _default || true",
                         returnStdout: true
                     ).trim()
-
                     if (!networkName) {
-                        error("❌ Could not find docker network (thesis_default). Check docker-compose output.")
+                        error("❌ Could not detect Docker network. Make sure docker-compose up ran successfully.")
                     }
 
                     echo "✅ Using network: ${networkName}"
 
-                    // Run integration tests inside the same network as app
+                    // Wait for app to respond
+                    echo "⏳ Waiting for app:8080/metrics to be ready..."
+                    sh """
+                        for i in {1..10}; do
+                            if docker run --rm --network ${networkName} curlimages/curl:8.4.0 -fs http://app:8080/metrics > /dev/null; then
+                                echo '✅ App is ready!';
+                                break;
+                            fi;
+                            echo '...still waiting (attempt '$i')';
+                            sleep 3;
+                        done
+                    """
+
+                    // Run integration tests inside same network
                     sh """
                         docker run --rm --network ${networkName} $DOCKER_IMAGE:test bash -c "
                             mkdir -p /app/reports && \
@@ -94,12 +100,6 @@ pipeline {
     post {
         always {
             junit allowEmptyResults: true, testResults: 'reports/*.xml'
-        }
-        failure {
-            echo "❌ Pipeline failed! Check the logs above."
-        }
-        success {
-            echo "🎉 Pipeline completed successfully!"
         }
     }
 }
