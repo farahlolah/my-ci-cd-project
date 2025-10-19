@@ -9,6 +9,8 @@ services:
     environment:
       - ENV=production
     restart: always
+    networks:
+      - my-ci-cd-pipeline-net
 
   prometheus:
     build:
@@ -20,6 +22,8 @@ services:
     depends_on:
       - app
     restart: always
+    networks:
+      - my-ci-cd-pipeline-net
 
   grafana:
     image: grafana/grafana:latest
@@ -29,3 +33,9 @@ services:
     depends_on:
       - prometheus
     restart: always
+    networks:
+      - my-ci-cd-pipeline-net
+
+networks:
+  my-ci-cd-pipeline-net:
+    external: true
