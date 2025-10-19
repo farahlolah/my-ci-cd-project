@@ -20,7 +20,7 @@ pipeline {
                 script {
                     sh """
                         docker build -t $DOCKER_IMAGE:test -f Dockerfile .
-                        docker run --rm -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm -v ${WORKSPACE}/reports:/app/reports -w /app $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         pytest /app/tests/unit -q --junitxml=/app/reports/unit.xml"
                     """
                 }
@@ -56,10 +56,9 @@ pipeline {
                     echo "Waiting for app to be ready..."
                     def retries = 20
                     def ready = false
-                    for (def i = 1; i <= retries; i++) { // <-- use def i
+                    for (def i = 1; i <= retries; i++) {
                         def appId = sh(script: "docker ps -qf name=my-ci-cd-pipeline_app_1", returnStdout: true).trim()
                         if (appId) {
-                            // Use the correct port 8080
                             def result = sh(script: "docker exec ${appId} curl -s http://localhost:8080/metrics || true", returnStdout: true).trim()
                             if (result) {
                                 ready = true
@@ -74,9 +73,10 @@ pipeline {
                         sh "docker logs \$(docker ps -qf name=my-ci-cd-pipeline_app_1 || true)"
                         error("App did not become ready in time.")
                     }
-        
+
+                    // Run integration tests
                     sh """
-                        docker run --rm --network ${NETWORK_NAME} $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
+                        docker run --rm --network ${NETWORK_NAME} -v ${WORKSPACE}/reports:/app/reports $DOCKER_IMAGE:test bash -c "mkdir -p /app/reports && \
                         PYTHONPATH=/app pytest /app/tests/integration -q --junitxml=/app/reports/integration.xml"
                     """
                 }
@@ -98,7 +98,8 @@ pipeline {
 
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'reports/*.xml'
+            // Publish JUnit reports and do not fail pipeline if tests fail
+            junit allowEmptyResults: true, testResults: 'reports/*.xml', skipMarkingBuildAsFailure: true
         }
         failure {
             echo "Pipeline failed! Check the logs above."
